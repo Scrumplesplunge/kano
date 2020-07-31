@@ -6,6 +6,7 @@ export module parser;
 
 export import ast;
 import io;
+import <unordered_set>;
 
 bool is_integer(std::string_view value) {
   if (value.starts_with("-")) value.remove_prefix(1);
@@ -109,6 +110,8 @@ struct parser : io::reader {
       io::location location;
       ast::expr value;
     };
+    std::unordered_map<std::string_view, io::location> defined_labels;
+    std::unordered_map<std::string_view, io::location> jump_labels;
     std::vector<stack_entry> stack;
     while (true) {
       skip_whitespace_and_comments();
@@ -143,7 +146,7 @@ struct parser : io::reader {
       };
       if (try_eat('}')) {
         check_empty();
-        return {name, std::move(function)};
+        break;
       }
       const auto command = word();
       skip_hspace();
@@ -168,12 +171,18 @@ struct parser : io::reader {
         stack.push_back({l, ast::callw{std::move(callee), call_args()}});
       } else if (command == "jump") {
         check_empty();
-        function.code.push_back(ast::jump{word()});
+        const auto label_pos = location();
+        const auto target = word();
+        jump_labels.emplace(target, label_pos);
+        function.code.push_back(ast::jump{target});
       } else if (command == "jumpc") {
         if (stack.empty()) die() << "no value on stack.";
         auto condition = pop();
         check_empty();
-        function.code.push_back(ast::jumpc{std::move(condition), word()});
+        const auto label_pos = location();
+        const auto target = word();
+        jump_labels.emplace(target, label_pos);
+        function.code.push_back(ast::jumpc{std::move(condition), target});
       } else if (command == "call") {
         if (stack.empty()) die(l) << "no value on stack.";
         auto callee = pop();
@@ -188,10 +197,27 @@ struct parser : io::reader {
         if (stack.size() < 2) die(l) << "not enough values on stack.";
         auto b = pop();
         function.code.push_back(ast::storew{pop(), std::move(b)});
+      } else if (peek() == ':') {
+        eat(':');
+        check_empty();
+        defined_labels.emplace(command, l);
+        function.code.push_back(ast::label{command});
       } else {
         die(l) << "no such command: " << command;
       }
     }
+    for (const auto& [label, location] : defined_labels) {
+      if (!jump_labels.contains(label)) {
+        message(io::message::warning, location)
+            << "label '" << label << "' is unused.";
+      }
+    }
+    for (const auto& [target, location] : jump_labels) {
+      if (!defined_labels.contains(target)) {
+        die(location) << "label '" << target << "' is undefined.";
+      }
+    }
+    return {name, std::move(function)};
   }
 
   // Precondition: is_identifier(peek_word())

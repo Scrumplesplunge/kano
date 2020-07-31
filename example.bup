@@ -7,7 +7,9 @@ function _start 0 {
   const 1
   builtin write
   call 3
+wat:
   const 0
   builtin exit
   call 1
+  jump watt
 }
