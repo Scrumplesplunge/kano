@@ -1,0 +1,13 @@
+message = ascii "Hello, World!\n"
+
+# TODO: Replace manual stack frame sizing with local variable definitions.
+function _start 0 {
+  const 14  # TODO: add support for `size message`.
+  address message
+  const 1
+  builtin write
+  call 3
+  const 0
+  builtin exit
+  call 1
+}
