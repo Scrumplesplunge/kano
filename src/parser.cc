@@ -186,7 +186,7 @@ struct parser : io::reader {
       } else if (command == "call") {
         if (stack.empty()) die(l) << "no value on stack.";
         auto callee = pop();
-        function.code.push_back(ast::call{std::move(callee), call_args()});
+        function.code.push_back(ast::call{{std::move(callee), call_args()}});
         check_empty();
       } else if (command == "ret") {
         function.code.push_back(ast::ret{});

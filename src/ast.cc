@@ -59,7 +59,7 @@ struct jump { std::string_view label; };
 struct jumpc { expr cond; std::string_view label; };
 
 // Call a function with the given args, producing no result.
-struct call { expr callee; std::vector<expr> args; };
+struct call : callw {};
 
 // Return a single word value from this function.
 struct retw { expr value; };
