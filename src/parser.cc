@@ -42,10 +42,12 @@ struct parser : io::reader {
   }
 
   std::int32_t parse_integer() {
+    const bool negative = try_eat('-');
     if (!is_integer(peek_word())) die() << "expected number.";
     const auto number = peek_word();
     advance(number.size());
-    return std::stoi(std::string(number));
+    std::uint32_t positive_value = std::stoul(std::string(number));
+    return negative ? -positive_value : positive_value;
   }
 
   // Precondition: peek_word() == "ascii"
@@ -174,7 +176,7 @@ struct parser : io::reader {
         const auto label_pos = location();
         const auto target = word();
         jump_labels.emplace(target, label_pos);
-        function.code.push_back(ast::jump{target});
+        function.code.push_back({l, ast::jump{target}});
       } else if (command == "jumpc") {
         if (stack.empty()) die() << "no value on stack.";
         auto condition = pop();
@@ -182,26 +184,27 @@ struct parser : io::reader {
         const auto label_pos = location();
         const auto target = word();
         jump_labels.emplace(target, label_pos);
-        function.code.push_back(ast::jumpc{std::move(condition), target});
+        function.code.push_back({l, ast::jumpc{std::move(condition), target}});
       } else if (command == "call") {
         if (stack.empty()) die(l) << "no value on stack.";
         auto callee = pop();
-        function.code.push_back(ast::call{{std::move(callee), call_args()}});
+        function.code.push_back(
+            {l, ast::call{{std::move(callee), call_args()}}});
         check_empty();
       } else if (command == "ret") {
-        function.code.push_back(ast::ret{});
+        function.code.push_back({l, ast::ret{}});
       } else if (command == "retw") {
-        function.code.push_back(ast::retw{pop()});
+        function.code.push_back({l, ast::retw{pop()}});
         check_empty();
       } else if (command == "storew") {
         if (stack.size() < 2) die(l) << "not enough values on stack.";
-        auto b = pop();
-        function.code.push_back(ast::storew{pop(), std::move(b)});
+        auto a = pop();
+        function.code.push_back({l, ast::storew{std::move(a), pop()}});
       } else if (peek() == ':') {
         eat(':');
         check_empty();
         defined_labels.emplace(command, l);
-        function.code.push_back(ast::label{command});
+        function.code.push_back({l, ast::label{command}});
       } else {
         die(l) << "no such command: " << command;
       }

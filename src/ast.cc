@@ -73,8 +73,10 @@ struct ret {};
 using stmt_type = std::variant<label, jump, jumpc, call, retw, storew, ret>;
 struct stmt {
   template <typename T>
-  requires (!std::is_same_v<std::decay_t<T>, stmt>)
-  stmt(T&& value) : value(new stmt_type{std::forward<T>(value)}) {}
+  requires(!std::is_same_v<std::decay_t<T>, stmt>)
+  stmt(io::location location, T&& value)
+      : location(location), value(new stmt_type{std::forward<T>(value)}) {}
+  io::location location;
   std::unique_ptr<stmt_type> value;
 };
 
