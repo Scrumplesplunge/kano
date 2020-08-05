@@ -2,11 +2,13 @@ module;
 
 #include <cassert>
 
-export module parser;
+export module ir.parser;
 
-export import ast;
+export import ir.ast;
 import io;
 import <unordered_set>;
+
+namespace ir {
 
 bool is_integer(std::string_view value) {
   if (value.starts_with("-")) value.remove_prefix(1);
@@ -280,3 +282,5 @@ struct parser : io::reader {
 export ast::program parse(const char* filename) {
   return parser{filename}.parse_program();
 }
+
+}  // namespace ir

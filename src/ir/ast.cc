@@ -1,4 +1,4 @@
-export module ast;
+export module ir.ast;
 
 import io;
 import <string_view>;
@@ -7,7 +7,7 @@ export import <unordered_map>;
 export import <variant>;
 export import <vector>;
 
-export namespace ast {
+export namespace ir::ast {
 
 // Local variable. The integer value is the offset from the frame pointer.
 enum local : int {};
@@ -100,4 +100,4 @@ struct definition {
 };
 using program = std::unordered_map<std::string_view, definition>;
 
-}  // namespace ast
+}  // namespace ir::ast

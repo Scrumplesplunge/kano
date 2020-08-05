@@ -2,10 +2,12 @@ module;
 
 #include <assert.h>
 
-export module x86;
+export module ir.x86;
 
-import ast;
+import ir.ast;
 import io;
+
+namespace ir {
 
 enum reg32 {
   reg_eax,
@@ -353,3 +355,5 @@ export void emit(std::ostream& output, const ast::program& program) {
     for (const auto& code : function->code) e.emit(code);
   }
 }
+
+}  // namespace ir
