@@ -37,8 +37,8 @@ export std::string_view open(const char* filename) {
 }
 
 export struct location {
-  int line, column;
-  const char* position;
+  int line = 1, column = 1;
+  const char* position = "\n";
   std::string_view line_contents() const {
     const char* const first = position - (column - 1);
     const char* last = position;
