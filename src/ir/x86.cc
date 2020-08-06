@@ -139,8 +139,9 @@ class emitter {
   void emit_subl(operand from, operand to) { emit_op("subl", from, to); }
   void emit_pushl(operand from) { emit_op("pushl", from); }
   void emit_popl(operand to) { emit_op("popl", to); }
-  void emit_call(operand f) { emit_op("call", f); }
+  void emit_call(operand f) { emit_op("call *", f); }
   void emit_jmp(std::string_view to) { emit_op("jmp", to); }
+  void emit_jz(std::string_view to) { emit_op("jz", to); }
   void emit_jnz(std::string_view to) { emit_op("jnz", to); }
   void emit_test(operand a, operand b) { emit_op("test", a, b); }
   void emit_leave() { emit_op("leave"); }
@@ -179,6 +180,14 @@ class emitter {
     const auto l = emit(output, a.left);
     const auto r = emit({}, a.right);
     emit_addl(r, l);
+    deallocate_register(r);
+    return l;
+  }
+
+  reg32 emit(std::optional<reg32> output, const ast::sub& a) {
+    const auto l = emit(output, a.left);
+    const auto r = emit({}, a.right);
+    emit_subl(r, l);
     deallocate_register(r);
     return l;
   }
@@ -248,7 +257,14 @@ class emitter {
 
   void emit(const ast::jump& j) { emit_jmp(j.label); }
 
-  void emit(const ast::jumpc& j) {
+  void emit(const ast::jz& j) {
+    const auto r = emit({}, j.cond);
+    emit_test(r, r);
+    deallocate_register(r);
+    emit_jz(j.label);
+  }
+
+  void emit(const ast::jnz& j) {
     const auto r = emit({}, j.cond);
     emit_test(r, r);
     deallocate_register(r);
@@ -350,6 +366,7 @@ export void emit(std::ostream& output, const ast::program& program) {
     output << ".global " << name << '\n';
     output << name << ":\n";
     emitter e{output};
+    e.emit_pushl(reg_ebp);
     e.emit_movl(reg_esp, reg_ebp);
     e.emit_subl(immediate{function->frame_size}, reg_esp);
     for (const auto& code : function->code) e.emit(code);

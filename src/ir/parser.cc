@@ -178,15 +178,25 @@ struct parser : io::reader {
         const auto label_pos = location();
         const auto target = word();
         jump_labels.emplace(target, label_pos);
-        function.code.push_back({l, ast::jump{target}});
-      } else if (command == "jumpc") {
+        function.code.push_back({l, ast::jump{std::string(target)}});
+      } else if (command == "jz") {
         if (stack.empty()) die() << "no value on stack.";
         auto condition = pop();
         check_empty();
         const auto label_pos = location();
         const auto target = word();
         jump_labels.emplace(target, label_pos);
-        function.code.push_back({l, ast::jumpc{std::move(condition), target}});
+        function.code.push_back(
+            {l, ast::jz{std::move(condition), std::string(target)}});
+      } else if (command == "jnz") {
+        if (stack.empty()) die() << "no value on stack.";
+        auto condition = pop();
+        check_empty();
+        const auto label_pos = location();
+        const auto target = word();
+        jump_labels.emplace(target, label_pos);
+        function.code.push_back(
+            {l, ast::jnz{std::move(condition), std::string(target)}});
       } else if (command == "call") {
         if (stack.empty()) die(l) << "no value on stack.";
         auto callee = pop();
@@ -206,7 +216,7 @@ struct parser : io::reader {
         eat(':');
         check_empty();
         defined_labels.emplace(command, l);
-        function.code.push_back({l, ast::label{command}});
+        function.code.push_back({l, ast::label{std::string(command)}});
       } else {
         die(l) << "no such command: " << command;
       }

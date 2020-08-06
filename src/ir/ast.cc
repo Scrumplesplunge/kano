@@ -17,10 +17,11 @@ struct global { std::string_view name; };
 
 struct loadw;
 struct add;
+struct sub;
 struct callw;
 enum class builtin { write, exit };
 using expr_type =
-    std::variant<std::int32_t, local, global, loadw, add, callw, builtin>;
+    std::variant<std::int32_t, local, global, loadw, add, sub, callw, builtin>;
 struct expr {
   template <typename T> expr(T&& value);
   std::unique_ptr<expr_type> value;
@@ -40,8 +41,9 @@ struct binop {
   expr left, right;
 };
 
-// Add the results of two expressions.
+// Arithmetic operators.
 struct add : binop { using binop::binop; };
+struct sub : binop { using binop::binop; };
 
 // Call a function with the given args and produce a single word result.
 struct callw { expr callee; std::vector<expr> args; };
@@ -50,13 +52,14 @@ template <typename T>
 expr::expr(T&& value) : value(new expr_type{std::forward<T>(value)}) {}
 
 // Code label that can be jumped to.
-struct label { std::string_view name; };
+struct label { std::string name; };
 
 // Jump to the given label.
-struct jump { std::string_view label; };
+struct jump { std::string label; };
 
-// Jump to the given label if the condition value is nonzero.
-struct jumpc { expr cond; std::string_view label; };
+// Jump to the given label if the condition value is zero/nonzero.
+struct jz { expr cond; std::string label; };
+struct jnz { expr cond; std::string label; };
 
 // Call a function with the given args, producing no result.
 struct call : callw {};
@@ -70,7 +73,7 @@ struct storew { expr location; expr value; };
 // Return from a function that produces no result.
 struct ret {};
 
-using stmt_type = std::variant<label, jump, jumpc, call, retw, storew, ret>;
+using stmt_type = std::variant<label, jump, jz, jnz, call, retw, storew, ret>;
 struct stmt {
   template <typename T>
   requires(!std::is_same_v<std::decay_t<T>, stmt>)
@@ -98,6 +101,6 @@ struct definition {
   std::variant<zeros, rodata, function> value;
   enum type { zeros, rodata, function };  // index for the variant.
 };
-using program = std::unordered_map<std::string_view, definition>;
+using program = std::unordered_map<std::string, definition>;
 
 }  // namespace ir::ast
