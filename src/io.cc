@@ -131,6 +131,8 @@ export class reader {
     assert(source_.back() == '\n');
   }
 
+  std::string_view filename() const { return filename_; }
+
   void skip_hspace() {
     const char* const begin = remaining_.data();
     const char* const end = begin + remaining_.size();
@@ -176,17 +178,19 @@ export class reader {
     return c;
   }
 
-  bool try_eat(char c) {
-    if (!remaining_.empty() && remaining_[0] == c) {
-      advance(1);
-      return true;
-    }
-    return false;
+  bool try_eat(std::string_view prefix) {
+    if (!remaining_.starts_with(prefix)) return false;
+    advance(prefix.size());
+    return true;
   }
 
-  void eat(char c) {
-    if (!try_eat(c)) die() << "expected '" << c << "'.";
+  bool try_eat(char c) { return try_eat(std::string_view(&c, 1)); }
+
+  void eat(std::string_view prefix) {
+    if (!try_eat(prefix)) die() << "expected '" << prefix << "'.";
   }
+
+  void eat(char c) { return eat(std::string_view(&c, 1)); }
 
   location location() const {
     return {.line = line_, .column = column_, .position = remaining_.data()};
