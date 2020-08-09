@@ -508,7 +508,6 @@ struct function_context {
     module->die(l) << "continue statements are unimplemented.";
   }
   void compile(io::location l, const ast::return_statement& s) {
-    // TODO: Type-check the return type.
     if (s.value) {
       auto [result, type] = gen_expr(*s.value);
       if (type != return_type) {
