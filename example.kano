@@ -1,13 +1,13 @@
 function fib(n : integer) : integer {
   var a : integer = 0;
   var b : integer = 1;
-  # TODO: Implement comparison operators and replace this with `i < n`.
-  var i : integer = n;
-  while (i) {
-    i = i - 1;
-    b = a + b;
-    a = b - a;
-  }
+  var i : integer = 0;
+  while (i < n) {  # a = fib(i), b = fib(i + 1)
+    i = i + 1;     # a = fib(i - 1), b = fib(i)
+    b = a + b;     # b = fib(i - 1) + fib(i) = fib(i + 1)
+    a = b - a;     # a = fib(i + 1) - fib(i - 1) = fib(i)
+  }                
+  # i == n -> a = fib(n)
   return a;
 }
 

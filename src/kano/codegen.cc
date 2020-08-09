@@ -7,48 +7,112 @@ export module kano.codegen;
 import kano.ast;
 import ir.ast;
 import io;
+import <iostream>;
 import <map>;
+import <type_traits>;
 
 namespace kano {
 
-enum class builtin_type {
-  void_type,
-  boolean,
-  int32,
-};
+template <typename... Ts> struct overload : Ts... { using Ts::operator()...; };
+template <typename... Ts> overload(Ts...) -> overload<Ts...>;
 
+struct void_type {};
+struct boolean_type {};
+struct integer_type {};
 struct pointer_type;
 struct function_type;
 
-using type_type = std::variant<builtin_type, pointer_type, function_type>;
+using type_type = std::variant<
+    void_type, boolean_type, integer_type, pointer_type, function_type>;
 
 struct type {
-  template <typename T> type(T&& value);
+  type() = default;
+  type(const type&);
+  type(type&& other) noexcept : value(std::move(other.value)) {}
+  template <typename T, typename = typename std::enable_if_t<
+      !std::is_same_v<type, std::decay_t<T>>>>
+  type(T&& value);
   std::unique_ptr<type_type> value;
 };
 
-bool operator==(const type& l, const type& r);
-
 struct pointer_type { type pointee; };
-
-bool operator==(const pointer_type& l, const pointer_type& r) {
-  return l.pointee == r.pointee;
-}
 
 struct function_type {
   type return_type;
   std::vector<type> parameters;
 };
 
+type::type(const type& other) {
+  if (other.value) value = std::make_unique<type_type>(*other.value);
+}
+
+template <typename T, typename>
+type::type(T&& value) : value(new type_type{std::forward<T>(value)}) {}
+
+bool operator==(const type& l, const type& r);
+bool operator==(void_type, void_type) { return true; }
+bool operator==(boolean_type, boolean_type) { return true; }
+bool operator==(integer_type, integer_type) { return true; }
+bool operator==(const pointer_type& l, const pointer_type& r) {
+  return l.pointee == r.pointee;
+}
 bool operator==(const function_type& l, const function_type& r) {
   return l.return_type == r.return_type && l.parameters == r.parameters;
 }
-
-template <typename T>
-type::type(T&& value) : value(new type_type{std::forward<T>(value)}) {}
-
 bool operator==(const type& l, const type& r) {
   return (!l.value && !r.value) || *l.value == *r.value;
+}
+
+int size(void_type) { return 0; }
+int size(boolean_type) { return 1; }
+int size(integer_type) { return 4; }
+int size(const pointer_type&) { return 4; }
+int size(const function_type&) {
+  std::cerr << "requesting size of function.";
+  std::exit(1);
+}
+int size(const type& t) {
+  assert(t.value);
+  return std::visit([](const auto& x) { return size(x); }, *t.value);
+}
+
+std::ostream& operator<<(std::ostream& output, const type& t);
+
+std::ostream& operator<<(std::ostream& output, void_type) {
+  return output << "void";
+}
+
+std::ostream& operator<<(std::ostream& output, boolean_type) {
+  return output << "boolean";
+}
+
+std::ostream& operator<<(std::ostream& output, integer_type) {
+  return output << "integer";
+}
+
+std::ostream& operator<<(std::ostream& output, const pointer_type& p) {
+  return output << "*" << p.pointee;
+}
+
+std::ostream& operator<<(std::ostream& output, const function_type& f) {
+  output << '(';
+  bool first = true;
+  for (const auto& p : f.parameters) {
+    if (first) {
+      first = false;
+    } else {
+      output << ", ";
+    }
+    output << "_ : " << p;
+  }
+  output << ") : " << f.return_type;
+  return output;
+}
+
+std::ostream& operator<<(std::ostream& output, const type& t) {
+  assert(t.value);
+  std::visit([&](const auto& x) { output << x; }, *t.value);
+  return output;
 }
 
 bool is_function(const type& t) {
@@ -82,9 +146,9 @@ struct module_context {
   }
   type check_type(io::location location, kano::ast::types::name name) const {
     // TODO: Add support for custom types.
-    if (name.value == "void") return builtin_type::void_type;
-    if (name.value == "boolean") return builtin_type::boolean;
-    if (name.value == "integer") return builtin_type::int32;
+    if (name.value == "void") return void_type{};
+    if (name.value == "boolean") return boolean_type{};
+    if (name.value == "integer") return integer_type{};
     die(location) << "no such type '" << name.value << "'.";
   }
   type check_type(io::location, const kano::ast::types::pointer& p) const {
@@ -146,7 +210,7 @@ struct module_context {
     // Emit the startup code.
     auto main = globals.find("main");
     if (main == globals.end()) die({}) << "no main function.";
-    const type main_type = function_type{builtin_type::int32, {}};
+    const type main_type = function_type{integer_type{}, {}};
     if (main->second.type != main_type) {
       die(main->second.location) << "main should be of type 'integer()'.";
     }
@@ -208,67 +272,173 @@ struct function_context {
     if (auto* global = lookup_global(name)) return global;
     module->die(l) << "no such name '" << name << "'.";
   }
-  ir::ast::expr gen_expr(io::location, ast::literal x) {
-    return std::visit([](auto x) { return (std::int32_t)x; }, x);
+  using typed_expr = std::pair<ir::ast::expr, type>;
+  typed_expr gen_expr(io::location, ast::literal x) {
+    return {x, integer_type{}};
   }
-  ir::ast::expr gen_expr(io::location l, ast::name n) {
+  typed_expr gen_expr(io::location l, ast::name n) {
     if (auto* local = lookup_local(n.value)) {
-      return ir::ast::loadw{ir::ast::local{local->offset}};
+      return {ir::ast::loadw{ir::ast::local{local->offset}}, local->type};
     }
     if (auto* global = lookup_global(n.value)) {
       if (is_function(global->type)) {
-        return ir::ast::global{global->symbol.name};
+        return {ir::ast::global{global->symbol.name}, global->type};
       } else {
-        return ir::ast::loadw{ir::ast::global{global->symbol.name}};
+        return {ir::ast::loadw{ir::ast::global{global->symbol.name}},
+                global->type};
       }
     }
     module->die(l) << "no such name '" << n.value << "'.";
-    return ir::ast::loadw{gen_addr(l, n)};
   }
   // TODO: Add type checking in expressions.
-  ir::ast::expr gen_expr(io::location, const ast::dereference& d) {
-    return ir::ast::loadw{gen_expr(d.inner)};
+  typed_expr gen_expr(
+      io::location l, const ast::dereference& d) {
+    auto [expr, inner_type] = gen_expr(d.inner);
+    if (auto* type = std::get_if<pointer_type>(inner_type.value.get())) {
+      return {ir::ast::loadw{std::move(expr)}, std::move(type->pointee)};
+    } else {
+      module->die(l) << "cannot dereference expression of type " << inner_type
+                     << ".";
+    }
   }
-  ir::ast::expr gen_expr(io::location, const ast::address_of& a) {
+  typed_expr gen_expr(io::location, const ast::address_of& a) {
     return gen_addr(a.inner);
   }
-  ir::ast::expr gen_expr(io::location, const ast::add& a) {
-    return ir::ast::add{gen_expr(a.left), gen_expr(a.right)};
+  typed_expr gen_expr(io::location location, const ast::add& a) {
+    auto l = gen_expr(a.left);
+    auto r = gen_expr(a.right);
+    return std::visit(overload{
+      [&](integer_type, integer_type) -> typed_expr {
+        return {ir::ast::add{std::move(l.first), std::move(r.first)},
+                integer_type{}};
+      },
+      [&](pointer_type& p, integer_type) -> typed_expr {
+        auto offset = ir::ast::mul{std::move(r.first), size(p.pointee)};
+        return {ir::ast::add{std::move(l.first), std::move(offset)},
+                std::move(p)};
+      },
+      [&](integer_type, pointer_type& p) -> typed_expr {
+        auto offset = ir::ast::mul{std::move(l.first), size(p.pointee)};
+        return {ir::ast::add{std::move(offset), std::move(r.first)},
+                std::move(p)};
+      },
+      [&](const auto& lt, const auto& rt) -> typed_expr {
+        module->die(location) << "cannot add " << lt << " and " << rt << ".";
+      },
+    }, *l.second.value, *r.second.value);
   }
-  ir::ast::expr gen_expr(io::location, const ast::sub& s) {
-    return ir::ast::sub{gen_expr(s.left), gen_expr(s.right)};
+  typed_expr gen_expr(io::location location, const ast::sub& s) {
+    auto l = gen_expr(s.left);
+    auto r = gen_expr(s.right);
+    return std::visit(overload{
+      [&](integer_type, integer_type) -> typed_expr {
+        return {ir::ast::sub{std::move(l.first), std::move(r.first)},
+                integer_type{}};
+      },
+      [&](pointer_type& p, integer_type) -> typed_expr {
+        auto offset = ir::ast::mul{std::move(r.first), size(p.pointee)};
+        return {ir::ast::sub{std::move(l.first), std::move(offset)},
+                std::move(p)};
+      },
+      [&](const auto& lt, const auto& rt) -> typed_expr {
+        module->die(location) << "cannot sub " << lt << " and " << rt << ".";
+      },
+    }, *l.second.value, *r.second.value);
   }
-  ir::ast::expr gen_expr(io::location, const ast::call& c) {
+  typed_expr gen_expr(io::location location, const ast::cmp_eq& c) {
+    auto l = gen_expr(c.left);
+    auto r = gen_expr(c.right);
+    if (l.second != r.second) {
+      module->die(location) << "cannot compare " << l.second << " against "
+                            << r.second << ".";
+    }
+    return {ir::ast::cmp_eq{std::move(l.first), std::move(r.first)},
+            boolean_type{}};
+  }
+  typed_expr gen_expr(io::location location, const ast::cmp_lt& c) {
+    auto l = gen_expr(c.left);
+    auto r = gen_expr(c.right);
+    if (l.second != r.second) {
+      module->die(location) << "cannot compare " << l.second << " against "
+                            << r.second << ".";
+    }
+    std::visit(overload{
+      [&](integer_type) {},
+      [&](pointer_type&) {},
+      [&](const auto&) {
+        module->die(location) << l.second << " is not an ordered type.";
+      },
+    }, *l.second.value);
+    return {ir::ast::cmp_lt{std::move(l.first), std::move(r.first)},
+            boolean_type{}};
+  }
+  typed_expr gen_expr(io::location l, const ast::call& c) {
     std::vector<ir::ast::expr> arguments;
+    std::vector<type> argument_types;
     auto callee = gen_expr(c.callee);
-    for (const auto& x : c.arguments) arguments.push_back(gen_expr(x));
-    return ir::ast::callw{std::move(callee), std::move(arguments)};
+    for (const auto& x : c.arguments) {
+      auto [expr, type] = gen_expr(x);
+      arguments.push_back(std::move(expr));
+      argument_types.push_back(std::move(type));
+    }
+    if (auto* f = std::get_if<function_type>(callee.second.value.get())) {
+      if (f->parameters.size() != arguments.size()) {
+        module->die(l) << "number of parameters does not match: expected "
+                       << f->parameters.size() << ", but got "
+                       << arguments.size() << ".";
+      }
+      for (int i = 0, n = arguments.size(); i < n; i++) {
+        if (f->parameters[i] != argument_types[i]) {
+          module->die(l) << "parameter " << (i + 1)
+                         << " for function call is of the wrong type: expected "
+                         << f->parameters[i] << " but got "
+                         << argument_types[i] << ".";
+        }
+      }
+      return {ir::ast::callw{std::move(callee.first), std::move(arguments)},
+              std::move(f->return_type)};
+    } else {
+      module->die(l) << "cannot invoke " << callee.second << ".";
+    }
   }
-  ir::ast::expr gen_expr(const ast::expression& e) {
+  typed_expr gen_expr(const ast::expression& e) {
     assert(e.value);
     return std::visit([&](const auto& x) { return gen_expr(e.location, x); },
                       *e.value);
   }
-  ir::ast::expr gen_addr(io::location l, ast::name n) {
+  typed_expr gen_addr(io::location l, ast::name n) {
     if (auto* local = lookup_local(n.value)) {
-      return ir::ast::local{local->offset};
+      return {ir::ast::local{local->offset}, pointer_type{local->type}};
     }
     if (auto* global = lookup_global(n.value)) {
-      return ir::ast::global{global->symbol.name};
+      return {ir::ast::global{global->symbol.name}, pointer_type{global->type}};
     }
     module->die(l) << "no such name '" << n.value << "'.";
   }
-  ir::ast::expr gen_addr(const ast::expression& e) {
+  typed_expr gen_addr(const ast::expression& e) {
     if (auto* name = std::get_if<ast::name>(e.value.get())) {
       return gen_addr(e.location, *name);
     } else {
+      // TODO: Improve the error message when this branch is reached on the left
+      // hand side of an assignment statement.
       module->die(e.location) << "cannot take address of temporary.";
     }
   }
   void compile_assignment(const ast::expression& destination,
                           const ast::expression& value) {
+    auto addr = gen_addr(destination);
+    assert(std::holds_alternative<pointer_type>(*addr.second.value));
+    auto pointee_type =
+        std::move(std::get<pointer_type>(*addr.second.value).pointee);
+    auto expr = gen_expr(value);
+    if (expr.second != pointee_type) {
+      module->die(destination.location)
+          << "cannot assign value of type " << expr.second
+          << " to destination of type " << pointee_type << ".";
+    }
     code.push_back({destination.location,
-                    ir::ast::storew{gen_addr(destination), gen_expr(value)}});
+                    ir::ast::storew{std::move(addr.first),
+                                    std::move(expr.first)}});
   }
   void compile(io::location l, const ast::variable_declaration& v) {
     if (auto* local = lookup_local(v.name)) {
@@ -293,9 +463,14 @@ struct function_context {
   }
   void compile(io::location l, const ast::if_statement& s) {
     const auto if_end_label = module->program->symbol("if_end");
+    auto [condition, type] = gen_expr(s.condition);
+    if (type != boolean_type{}) {
+      module->die(l) << "invalid type for branch condition: expected "
+                     << boolean_type{} << ", got " << type << ".";
+    }
     if (s.else_branch) {
       const auto else_label = module->program->symbol("else");
-      code.push_back({l, ir::ast::jz{gen_expr(s.condition), else_label.name}});
+      code.push_back({l, ir::ast::jz{std::move(condition), else_label.name}});
       compile(s.then_branch);
       code.push_back(
           {s.else_branch->location, ir::ast::jump{if_end_label.name}});
@@ -305,7 +480,7 @@ struct function_context {
       code.push_back({l, ir::ast::label{if_end_label.name}});
     } else {
       code.push_back(
-          {l, ir::ast::jz{gen_expr(s.condition), if_end_label.name}});
+          {l, ir::ast::jz{std::move(condition), if_end_label.name}});
       compile(s.then_branch);
       code.push_back({l, ir::ast::label{if_end_label.name}});
     }
@@ -318,8 +493,13 @@ struct function_context {
     code.push_back({l, ir::ast::label{while_start_label.name}});
     compile(s.body);
     code.push_back({l, ir::ast::label{while_condition_label.name}});
+    auto [condition, type] = gen_expr(s.condition);
+    if (type != boolean_type{}) {
+      module->die(l) << "invalid type for branch condition: expected "
+                     << boolean_type{} << ", got " << type << ".";
+    }
     code.push_back(
-        {l, ir::ast::jnz{gen_expr(s.condition), while_start_label.name}});
+        {l, ir::ast::jnz{std::move(condition), while_start_label.name}});
   }
   void compile(io::location l, const ast::break_statement&) {
     module->die(l) << "break statements are unimplemented.";
@@ -330,7 +510,12 @@ struct function_context {
   void compile(io::location l, const ast::return_statement& s) {
     // TODO: Type-check the return type.
     if (s.value) {
-      code.push_back({l, ir::ast::retw{gen_expr(*s.value)}});
+      auto [result, type] = gen_expr(*s.value);
+      if (type != return_type) {
+        module->die(l) << "return type mismatch: expected " << return_type
+                       << ", got " << type << ".";
+      }
+      code.push_back({l, ir::ast::retw{std::move(result)}});
     } else {
       code.push_back({l, ir::ast::ret{}});
     }

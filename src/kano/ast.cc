@@ -30,15 +30,17 @@ type::type(io::location location, T&& value)
 }  // namespace types
 
 // Note: index of variant values matches builtin values.
-using literal = std::variant<bool, std::byte, std::int32_t>;
+using literal = std::int32_t;
 struct name { std::string_view value; };
 struct dereference;
 struct address_of;
 struct add;
 struct sub;
+struct cmp_eq;
+struct cmp_lt;
 struct call;
-using expression_type =
-    std::variant<literal, name, dereference, address_of, add, sub, call>;
+using expression_type = std::variant<literal, name, dereference, address_of,
+                                     add, sub, cmp_eq, cmp_lt, call>;
 struct expression {
   template <typename T> expression(io::location, T&& value);
   io::location location;
@@ -61,6 +63,8 @@ struct binop {
 
 struct add : binop { using binop::binop; };
 struct sub : binop { using binop::binop; };
+struct cmp_eq : binop { using binop::binop; };
+struct cmp_lt : binop { using binop::binop; };
 
 struct call {
   expression callee;

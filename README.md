@@ -20,16 +20,18 @@ Example program:
     function fib(n : integer) : integer {
       var a : integer = 0;
       var b : integer = 1;
-      var i : integer = n;
-      while (i) {   # a = fib(n - i), b = fib(n - i + 1)
-        i = i - 1;  # a = fib(n - i - 1), b = fib(n - i)
-        b = a + b;  # b = fib(n - i - 1) + fib(n - i)
-                    #   = fib(n - i + 1)
-        a = b - a;  # a = fib(n - i + 1) - fib(n - i - 1)
-                    #   = fib(n - i)
-      }
-      # i = 0 -> a = fib(n)
+      var i : integer = 0;
+      while (i < n) {  # a = fib(i), b = fib(i + 1)
+        i = i + 1;     # a = fib(i - 1), b = fib(i)
+        b = a + b;     # b = fib(i - 1) + fib(i) = fib(i + 1)
+        a = b - a;     # a = fib(i + 1) - fib(i - 1) = fib(i)
+      }                
+      # i == n -> a = fib(n)
       return a;
+    }
+    
+    function main() : integer {
+      return fib(10);
     }
 
 ## Bup

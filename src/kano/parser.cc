@@ -109,7 +109,7 @@ struct parser : io::reader {
     return parse_suffix();
   }
 
-  ast::expression parse_expression() {
+  ast::expression parse_sum() {
     ast::expression result = parse_prefix();
     while (true) {
       skip_whitespace_and_comments();
@@ -121,6 +121,19 @@ struct parser : io::reader {
       } else {
         return result;
       }
+    }
+  }
+
+  ast::expression parse_expression() {
+    ast::expression left = parse_sum();
+    skip_whitespace_and_comments();
+    const auto l = location();
+    if (try_symbol("<")) {
+      return {l, ast::cmp_lt{std::move(left), parse_sum()}};
+    } else if (try_symbol("==")) {
+      return {l, ast::cmp_eq{std::move(left), parse_sum()}};
+    } else {
+      return left;
     }
   }
 
