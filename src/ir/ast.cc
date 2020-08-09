@@ -18,10 +18,13 @@ struct global { std::string_view name; };
 struct loadw;
 struct add;
 struct sub;
+struct mul;
+struct cmp_eq;
+struct cmp_lt;
 struct callw;
 enum class builtin { write, exit };
-using expr_type =
-    std::variant<std::int32_t, local, global, loadw, add, sub, callw, builtin>;
+using expr_type = std::variant<std::int32_t, local, global, loadw, add, sub,
+                               mul, cmp_eq, cmp_lt, callw, builtin>;
 struct expr {
   template <typename T> expr(T&& value);
   std::unique_ptr<expr_type> value;
@@ -44,6 +47,9 @@ struct binop {
 // Arithmetic operators.
 struct add : binop { using binop::binop; };
 struct sub : binop { using binop::binop; };
+struct mul : binop { using binop::binop; };
+struct cmp_eq : binop { using binop::binop; };
+struct cmp_lt : binop { using binop::binop; };
 
 // Call a function with the given args and produce a single word result.
 struct callw { expr callee; std::vector<expr> args; };

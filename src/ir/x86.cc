@@ -20,6 +20,13 @@ enum reg32 {
   reg_edi,
 };
 
+enum reg8 {
+  reg_al,
+  reg_cl,
+  reg_dl,
+  reg_bl,
+};
+
 // Any symbolic name in the output, e.g. a data or function label.
 struct symbol { std::string_view name; };
 using value = std::variant<std::int32_t, symbol>;
@@ -29,7 +36,7 @@ struct immediate { value value; };
 struct direct { immediate address; };
 // Load a value at a constant offset from a register.
 struct indirect { reg32 base; std::int32_t offset = 0; };
-using operand = std::variant<immediate, reg32, direct, indirect>;
+using operand = std::variant<immediate, reg8, reg32, direct, indirect>;
 
 std::ostream& operator<<(std::ostream& output, reg32 reg) {
   switch (reg) {
@@ -41,6 +48,15 @@ std::ostream& operator<<(std::ostream& output, reg32 reg) {
     case reg_ebp: return output << "%ebp";
     case reg_esi: return output << "%esi";
     case reg_edi: return output << "%edi";
+  }
+}
+
+std::ostream& operator<<(std::ostream& output, reg8 reg) {
+  switch (reg) {
+    case reg_al: return output << "%al";
+    case reg_cl: return output << "%dl";
+    case reg_dl: return output << "%bl";
+    case reg_bl: return output << "%cl";
   }
 }
 
@@ -84,7 +100,7 @@ class emitter {
   }
 
   // Allocate an available register, or exit if none are available.
-  reg32 allocate_register() {
+  reg32 allocate_reg32() {
     if (unused_.empty()) die() << "no available registers.";
     const reg32 x = unused_.back();
     unused_.pop_back();
@@ -92,7 +108,7 @@ class emitter {
   }
 
   // Allocate a specific register, or exit if it is not available.
-  reg32 allocate_register(reg32 desired) {
+  reg32 allocate_reg32(reg32 desired) {
     if (!is_available(desired)) {
       die() << "required register " << desired << " is already taken.";
     }
@@ -102,13 +118,69 @@ class emitter {
   }
 
   // Convenience wrapper that allows optionally specifying the output register.
-  reg32 allocate_register(std::optional<reg32> desired) {
-    return desired ? allocate_register(*desired) : allocate_register();
+  reg32 allocate_reg32(std::optional<reg32> desired) {
+    return desired ? allocate_reg32(*desired) : allocate_reg32();
+  }
+
+  std::optional<reg8> get_reg8(reg32 r) const {
+    switch (r) {
+      case reg_eax: return reg_al;
+      case reg_ebx: return reg_bl;
+      case reg_ecx: return reg_cl;
+      case reg_edx: return reg_dl;
+      default: return std::nullopt;
+    }
+  }
+
+  reg32 get_reg32(reg8 r) const {
+    switch (r) {
+      case reg_al: return reg_eax;
+      case reg_bl: return reg_ebx;
+      case reg_cl: return reg_ecx;
+      case reg_dl: return reg_edx;
+    }
+  }
+
+  bool is_available(reg8 r) const {
+    for (auto r32 : unused_) {
+      if (auto r8 = get_reg8(r32); r8 && *r8 == r) return true;
+    }
+    return false;
+  }
+
+  // Allocate an available register, or exit if none are available.
+  reg8 allocate_reg8() {
+    if (unused_.empty()) die() << "no available registers.";
+    for (auto x : unused_) {
+      if (auto r8 = get_reg8(x)) return allocate_reg8(*r8);
+    }
+    die() << "no 8-bit registers are available.";
+  }
+
+  // Allocate a specific register, or exit if it is not available.
+  reg8 allocate_reg8(reg8 desired) {
+    for (auto i = unused_.begin(); i != unused_.end(); ++i) {
+      if (auto r8 = get_reg8(*i); r8 && *r8 == desired) {
+        unused_.erase(i);
+        return desired;
+      }
+    }
+    die() << "required register " << desired << " is already taken.";
+  }
+
+  // Convenience wrapper that allows optionally specifying the output register.
+  reg8 allocate_reg8(std::optional<reg8> desired) {
+    return desired ? allocate_reg8(*desired) : allocate_reg8();
   }
 
   void deallocate_register(reg32 x) {
     assert(!is_available(x));
     unused_.push_back(x);
+  }
+
+  void deallocate_register(reg8 x) {
+    assert(!is_available(x));
+    unused_.push_back(get_reg32(x));
   }
 
   io::fatal_message die() const {
@@ -133,16 +205,21 @@ class emitter {
     *output_ << here << ":\n";
   }
 
+  void emit_seteq(reg8 r) { emit_op("seteq", r); }
+  void emit_setl(reg8 r) { emit_op("setl", r); }
+  void emit_movzx(reg8 from, operand to) { emit_op("movzx", from, to); }
   void emit_movl(operand from, operand to) { emit_op("movl", from, to); }
   void emit_lea(operand from, operand to) { emit_op("lea", from, to); }
   void emit_addl(operand from, operand to) { emit_op("addl", from, to); }
   void emit_subl(operand from, operand to) { emit_op("subl", from, to); }
+  void emit_mull(operand from, operand to) { emit_op("mull", from, to); }
   void emit_pushl(operand from) { emit_op("pushl", from); }
   void emit_popl(operand to) { emit_op("popl", to); }
   void emit_call(operand f) { emit_op("call *", f); }
   void emit_jmp(std::string_view to) { emit_op("jmp", to); }
   void emit_jz(std::string_view to) { emit_op("jz", to); }
   void emit_jnz(std::string_view to) { emit_op("jnz", to); }
+  void emit_cmpl(operand a, operand b) { emit_op("cmpl", a, b); }
   void emit_test(operand a, operand b) { emit_op("test", a, b); }
   void emit_leave() { emit_op("leave"); }
   void emit_ret() { emit_op("ret"); }
@@ -153,19 +230,19 @@ class emitter {
   // different expressions such as immediates or indirect operands.
 
   reg32 emit(std::optional<reg32> output, std::int32_t x) {
-    const auto reg = allocate_register(output);
+    const auto reg = allocate_reg32(output);
     emit_movl(immediate{x}, reg);
     return reg;
   }
 
   reg32 emit(std::optional<reg32> output, ast::local l) {
-    const auto reg = allocate_register(output);
+    const auto reg = allocate_reg32(output);
     emit_lea(indirect{reg_ebp, (int)l}, reg);
     return reg;
   }
 
   reg32 emit(std::optional<reg32> output, ast::global g) {
-    const auto reg = allocate_register(output);
+    const auto reg = allocate_reg32(output);
     emit_movl(immediate{symbol{g.name}}, reg);
     return reg;
   }
@@ -188,6 +265,38 @@ class emitter {
     const auto l = emit(output, a.left);
     const auto r = emit({}, a.right);
     emit_subl(r, l);
+    deallocate_register(r);
+    return l;
+  }
+
+  reg32 emit(std::optional<reg32> output, const ast::mul& m) {
+    const auto l = emit(output, m.left);
+    const auto r = emit({}, m.right);
+    emit_mull(r, l);
+    deallocate_register(r);
+    return l;
+  }
+
+  reg32 emit(std::optional<reg32> output, const ast::cmp_eq& m) {
+    const auto l = emit(output, m.left);
+    const auto r = emit({}, m.right);
+    emit_cmpl(r, l);
+    auto temp = allocate_reg8();
+    emit_seteq(temp);
+    emit_movzx(temp, l);
+    deallocate_register(temp);
+    deallocate_register(r);
+    return l;
+  }
+
+  reg32 emit(std::optional<reg32> output, const ast::cmp_lt& m) {
+    const auto l = emit(output, m.left);
+    const auto r = emit({}, m.right);
+    emit_cmpl(r, l);
+    auto temp = allocate_reg8();
+    emit_setl(temp);
+    emit_movzx(temp, l);
+    deallocate_register(temp);
     deallocate_register(r);
     return l;
   }
@@ -241,7 +350,7 @@ class emitter {
     emit_call(r);
     deallocate_register(r);
     // Place the result in the right register.
-    const auto o = allocate_register(output);
+    const auto o = allocate_reg32(output);
     if (o != reg_eax) emit_movl(reg_eax, o);
     if (must_save) emit_popl(reg_eax);
     return o;
