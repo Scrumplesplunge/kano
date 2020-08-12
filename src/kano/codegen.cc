@@ -238,6 +238,7 @@ struct local {
 
 struct scope {
   std::map<std::string_view, local> variables;
+  std::optional<symbol> break_label, continue_label;
   int frame_size = 0;
 };
 
@@ -255,6 +256,18 @@ struct function_context {
   std::vector<scope> locals;
   int frame_size = 0;
   std::vector<ir::ast::stmt> code;
+  const symbol& break_label(io::location l) {
+    for (int i = locals.size() - 1; i >= 0; i--) {
+      if (locals[i].break_label) return *locals[i].break_label;
+    }
+    module->die(l) << "cannot break in this context.";
+  }
+  const symbol& continue_label(io::location l) {
+    for (int i = locals.size() - 1; i >= 0; i--) {
+      if (locals[i].continue_label) return *locals[i].continue_label;
+    }
+    module->die(l) << "cannot continue in this context.";
+  }
   local* lookup_local(std::string_view name) {
     for (int i = locals.size() - 1; i >= 0; i--) {
       auto entry = locals[i].variables.find(name);
@@ -489,8 +502,12 @@ struct function_context {
     const auto while_start_label = module->program->symbol("while_start");
     const auto while_condition_label =
         module->program->symbol("while_condition");
+    const auto while_end_label = module->program->symbol("while_end");
     code.push_back({l, ir::ast::jump{while_condition_label.name}});
     code.push_back({l, ir::ast::label{while_start_label.name}});
+    locals.push_back({});
+    locals.back().continue_label = while_condition_label;
+    locals.back().break_label = while_end_label;
     compile(s.body);
     code.push_back({l, ir::ast::label{while_condition_label.name}});
     auto [condition, type] = gen_expr(s.condition);
@@ -500,12 +517,13 @@ struct function_context {
     }
     code.push_back(
         {l, ir::ast::jnz{std::move(condition), while_start_label.name}});
+    code.push_back({l, ir::ast::label{while_end_label.name}});
   }
   void compile(io::location l, const ast::break_statement&) {
-    module->die(l) << "break statements are unimplemented.";
+    code.push_back({l, ir::ast::jump{break_label(l).name}});
   }
   void compile(io::location l, const ast::continue_statement&) {
-    module->die(l) << "continue statements are unimplemented.";
+    code.push_back({l, ir::ast::jump{continue_label(l).name}});
   }
   void compile(io::location l, const ast::return_statement& s) {
     if (s.value) {
@@ -520,7 +538,9 @@ struct function_context {
     }
   }
   void compile(io::location, const std::vector<ast::statement>& block) {
+    locals.push_back({});
     for (const auto& s : block) compile(s);
+    locals.pop_back();
   }
   void compile(const ast::statement& s) {
     assert(s.value);
