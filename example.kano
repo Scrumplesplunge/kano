@@ -6,11 +6,13 @@ function fib(n : integer) : integer {
     i = i + 1;     # a = fib(i - 1), b = fib(i)
     b = a + b;     # b = fib(i - 1) + fib(i) = fib(i + 1)
     a = b - a;     # a = fib(i + 1) - fib(i - 1) = fib(i)
-  }                
+  }
   # i == n -> a = fib(n)
   return a;
 }
 
 function main() : integer {
+  var message : *byte = "Hello, World!\n";
+  write(1, message, 14);
   return fib(10);
 }

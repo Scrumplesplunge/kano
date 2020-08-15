@@ -83,10 +83,11 @@ struct while_statement;
 struct break_statement {};
 struct continue_statement {};
 struct return_statement { std::optional<expression> value = {}; };
+struct call_statement : call {};
 using statement_type =
     std::variant<variable_declaration, assignment, if_statement,
                  while_statement, break_statement, continue_statement,
-                 return_statement, std::vector<statement>>;
+                 return_statement, call_statement, std::vector<statement>>;
 struct statement {
   statement();
   template <typename T> statement(io::location, T&& value);

@@ -162,7 +162,8 @@ struct module_context {
     return io::fatal_message(filename, location, io::message::error);
   }
   type check_type(io::location location, kano::ast::types::name name) const {
-    // TODO: Add support for custom types.
+    // TODO: Refactor the name resolution logic to use the same code for
+    // variables and types.
     if (name.value == "void") return void_type{};
     if (name.value == "boolean") return boolean_type{};
     if (name.value == "byte") return byte_type{};
@@ -315,6 +316,18 @@ struct function_context {
     return std::visit([&](const auto& x) { return gen_literal(l, x); }, x);
   }
   typed_expr gen_expr(io::location l, ast::name n) {
+    // TODO: Refactor name lookup so that builtins can be looked up the same way
+    // as normal definitions, which will allow them to be shadowed.
+    if (n.value == "write") {
+      return {ir::ast::builtin::write,
+              function_type{
+                  integer_type{},
+                  {integer_type{}, pointer_type{byte_type{}}, integer_type{}}}};
+    }
+    if (n.value == "exit") {
+      return {ir::ast::builtin::exit,
+              function_type{void_type{}, {integer_type{}}}};
+    }
     if (auto* local = lookup_local(n.value)) {
       return {ir::ast::loadw{ir::ast::local{local->offset}}, local->type};
     }
@@ -561,6 +574,11 @@ struct function_context {
     } else {
       code.push_back({l, ir::ast::ret{}});
     }
+  }
+  void compile(io::location l, const ast::call_statement& call) {
+    auto [expr, type] = gen_expr(l, call);
+    auto& callw = std::get<ir::ast::callw>(*expr.value);
+    code.push_back({l, ir::ast::call{std::move(callw)}});
   }
   void compile(io::location, const std::vector<ast::statement>& block) {
     locals.push_back({});

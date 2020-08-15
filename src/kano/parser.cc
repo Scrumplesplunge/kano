@@ -240,11 +240,18 @@ struct parser : io::reader {
     if (word == "continue") return {l, parse_continue_statement()};
     if (word == "return") return {l, parse_return_statement()};
     if (word == "var") return {l, parse_variable_declaration()};
-    auto destination = parse_expression();
-    eat('=');
-    auto value = parse_expression();
+    auto expression = parse_expression();
+    if (try_eat('=')) {
+      auto value = parse_expression();
+      eat(';');
+      return {l, ast::assignment{std::move(expression), std::move(value)}};
+    }
     eat(';');
-    return {l, ast::assignment{std::move(destination), std::move(value)}};
+    if (auto* call = std::get_if<ast::call>(expression.value.get())) {
+      return {l, ast::call_statement{std::move(*call)}};
+    } else {
+      die(l) << "expression result is discarded.";
+    }
   }
 
   ast::function parse_function() {
