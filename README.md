@@ -15,6 +15,21 @@ From the Greek "κάνω", meaning "do".
 
   * Semantics will be similar to C, e.g. plain data structures, value semantics.
 
+Ideas for future features:
+
+  * Multi-file support with module name and file layout similar to Python, but
+    with explicit export statements in modules.
+  * Unbounded integer types. The compiler will perform static analysis to
+    determine the bounds of all integer expressions and generate code that can
+    handle that range. The expectation is that almost all real code will have
+    small provable bounds, but we shall see...
+  * Allocate stack frames just like structs: a stack frame must have space for
+    all recursive calls it makes. If the compiler can't prove and determine
+    a fixed frame size, frames must explicitly be heap-allocated. This makes it
+    trivial to track stack growth, makes stack explosion due to recursion have
+    obvious syntax, and sets the groundwork for nifty things like zero overhead
+    coroutines.
+
 Example program:
 
     function fib(n : integer) : integer {
@@ -39,6 +54,12 @@ Example program:
 A portmanteau of "bottom up", so named because it is the backend for the
 compiler. Bup exposes a stack machine instruction set and compiles to x86
 assembly.
+
+Ideas for future features:
+
+  * Support for objects larger than a register (copying, function parameters,
+    return values).
+  * Arbitrary (but static) sized integer arithmetic.
 
 Example program:
 
