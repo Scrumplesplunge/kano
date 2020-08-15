@@ -13,8 +13,9 @@ namespace types {
 
 struct name { std::string_view value; };
 struct pointer;
+struct array;
 
-using type_type = std::variant<name, pointer>;
+using type_type = std::variant<name, pointer, array>;
 struct type {
   template <typename T> type(io::location location, T&& value);
   io::location location;
@@ -22,6 +23,7 @@ struct type {
 };
 
 struct pointer { type pointee; };
+struct array { type element; int size; };
 
 template <typename T>
 type::type(io::location location, T&& value)
@@ -34,13 +36,14 @@ using literal = std::variant<std::int32_t, std::string>;
 struct name { std::string_view value; };
 struct dereference;
 struct address_of;
+struct index;
 struct add;
 struct sub;
 struct cmp_eq;
 struct cmp_lt;
 struct call;
 using expression_type = std::variant<literal, name, dereference, address_of,
-                                     add, sub, cmp_eq, cmp_lt, call>;
+                                     index, add, sub, cmp_eq, cmp_lt, call>;
 struct expression {
   template <typename T> expression(io::location, T&& value);
   io::location location;
@@ -61,6 +64,7 @@ struct binop {
   expression left, right;
 };
 
+struct index : binop { using binop::binop; };
 struct add : binop { using binop::binop; };
 struct sub : binop { using binop::binop; };
 struct cmp_eq : binop { using binop::binop; };

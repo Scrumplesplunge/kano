@@ -86,7 +86,11 @@ struct parser : io::reader {
     while (true) {
       skip_whitespace_and_comments();
       const auto l = location();
-      if (try_symbol("(")) {
+      if (try_symbol("[")) {
+        auto index = parse_expression();
+        symbol("]");
+        result = {l, ast::index{std::move(result), std::move(index)}};
+      } else if (try_symbol("(")) {
         std::vector<ast::expression> arguments;
         if (!try_symbol(")")) {
           while (true) {
@@ -142,6 +146,12 @@ struct parser : io::reader {
     skip_whitespace_and_comments();
     const auto l = location();
     if (try_symbol("*")) return {l, ast::types::pointer{parse_type()}};
+    if (try_symbol("[")) {
+      // TODO: Allow array sizes that aren't literal integers.
+      auto size = parse_integer();
+      symbol("]");
+      return {l, ast::types::array{parse_type(), size}};
+    }
     const auto name = word();
     if (name.empty()) die() << "expected type name.";
     return {l, ast::types::name{name}};

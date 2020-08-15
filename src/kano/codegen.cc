@@ -21,11 +21,11 @@ struct boolean_type {};
 struct byte_type {};
 struct integer_type {};
 struct pointer_type;
+struct array_type;
 struct function_type;
 
-using type_type = std::variant<
-    void_type, boolean_type, byte_type,
-    integer_type, pointer_type, function_type>;
+using type_type = std::variant<void_type, boolean_type, byte_type, integer_type,
+                               pointer_type, array_type, function_type>;
 
 struct type {
   type() = default;
@@ -38,6 +38,8 @@ struct type {
 };
 
 struct pointer_type { type pointee; };
+
+struct array_type { type element; int size; };
 
 struct function_type {
   type return_type;
@@ -59,6 +61,9 @@ bool operator==(integer_type, integer_type) { return true; }
 bool operator==(const pointer_type& l, const pointer_type& r) {
   return l.pointee == r.pointee;
 }
+bool operator==(const array_type& l, const array_type& r) {
+  return l.element == r.element && l.size == r.size;
+}
 bool operator==(const function_type& l, const function_type& r) {
   return l.return_type == r.return_type && l.parameters == r.parameters;
 }
@@ -66,11 +71,13 @@ bool operator==(const type& l, const type& r) {
   return (!l.value && !r.value) || *l.value == *r.value;
 }
 
+int size(const type&);
 int size(void_type) { return 0; }
 int size(boolean_type) { return 1; }
 int size(byte_type) { return 1; }
 int size(integer_type) { return 4; }
 int size(const pointer_type&) { return 4; }
+int size(const array_type& a) { return size(a.element) * a.size; }
 int size(const function_type&) {
   std::cerr << "requesting size of function.";
   std::exit(1);
@@ -100,6 +107,10 @@ std::ostream& operator<<(std::ostream& output, integer_type) {
 
 std::ostream& operator<<(std::ostream& output, const pointer_type& p) {
   return output << "*" << p.pointee;
+}
+
+std::ostream& operator<<(std::ostream& output, const array_type& a) {
+  return output << "[" << a.size << "]" << a.element;
 }
 
 std::ostream& operator<<(std::ostream& output, const function_type& f) {
@@ -172,6 +183,9 @@ struct module_context {
   }
   type check_type(io::location, const kano::ast::types::pointer& p) const {
     return pointer_type{check_type(p.pointee)};
+  }
+  type check_type(io::location, const kano::ast::types::array& a) const {
+    return array_type{check_type(a.element), a.size};
   }
   type check_type(const kano::ast::types::type& type) const {
     assert(type.value);
@@ -355,6 +369,27 @@ struct function_context {
   typed_expr gen_expr(io::location, const ast::address_of& a) {
     return gen_addr(a.inner);
   }
+  typed_expr gen_expr(io::location location, const ast::index& i) {
+    auto l = gen_expr(i.left);
+    auto r = gen_expr(i.right);
+    return std::visit(overload{
+      [&](array_type& a, integer_type) -> typed_expr {
+        return {ir::ast::add{std::move(l.first),
+                ir::ast::mul{std::move(r.first), size(a.element)}},
+                a.element};
+      },
+      [&](array_type&, const auto& rt) -> typed_expr {
+        module->die(location) << "cannot use type " << rt << " as an index.";
+      },
+      [&](const auto& lt, integer_type) -> typed_expr {
+        module->die(location) << "cannot index type " << lt << ".";
+      },
+      [&](const auto& lt, const auto& rt) -> typed_expr {
+        module->die(location) << "invalid types for indexing: "
+                              << lt << " and " << rt << ".";
+      },
+    }, *l.second.value, *r.second.value);
+  }
   typed_expr gen_expr(io::location location, const ast::add& a) {
     auto l = gen_expr(a.left);
     auto r = gen_expr(a.right);
@@ -446,6 +481,12 @@ struct function_context {
                          << argument_types[i] << ".";
         }
       }
+      // TODO: Implement a proper calling convention for functions that take
+      // large types as parameters, or return large types. One solution would be
+      // to implement large parameters by passing pointers instead, and to
+      // implement large return types by having an implicit additional
+      // parameter which specifies the memory location where the output should
+      // be written to.
       return {ir::ast::callw{std::move(callee.first), std::move(arguments)},
               std::move(f->return_type)};
     } else {
@@ -590,12 +631,30 @@ struct function_context {
     std::visit([&](const auto& x) { compile(s.location, x); }, *s.value);
   }
   ir::ast::function compile() {
+    if (auto* a = std::get_if<array_type>(return_type.value.get())) {
+      // TODO: Implement large return types. One possible calling convention is
+      // to desugar such functions to have one additional parameter which is
+      // a pointer to the memory location that the return value should be
+      // written to, and have return statements write to that location.
+      module->die(location)
+          << "support for return type " << *a << " is unimplemented.";
+    }
     int offset = 8;  // Past the stored stack frame and return address.
     locals.push_back({});
     for (const auto& p : function->parameters) {
       assert(!p.initializer);
+      auto param_type = module->check_type(p.type);
+      if (auto* a = std::get_if<array_type>(param_type.value.get())) {
+        // TODO: Implement large parameter types. This will likely require
+        // extensions to bup to make it handle values larger than a single
+        // register. The current calling convention pushes all arguments to the
+        // stack, so larger values should work fine in principle, but bup
+        // expressions cannot yield such values right now.
+        module->die(location)
+            << "support for parameter type " << *a << " is unimplemented.";
+      }
       locals[0].variables.emplace(
-          p.name, local{location, offset, module->check_type(p.type)});
+          p.name, local{location, offset, std::move(param_type)});
       // TODO: Add support for other types.
       offset += 4;
     }
