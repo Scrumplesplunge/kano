@@ -135,7 +135,7 @@ struct parser : io::reader {
       if (command == "const") {
         stack.push_back({l, parse_integer()});
       } else if (command == "address") {
-        stack.push_back({l, ast::global{word()}});
+        stack.push_back({l, ast::global{std::string(word())}});
       } else if (command == "builtin") {
         stack.push_back({l, parse_builtin()});
       } else if (command == "local") {

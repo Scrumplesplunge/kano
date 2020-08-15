@@ -6,6 +6,7 @@ import <memory>;
 export import <unordered_map>;
 export import <variant>;
 export import <vector>;
+export import <string>;
 
 export namespace ir::ast {
 
@@ -13,7 +14,7 @@ export namespace ir::ast {
 enum local : int {};
 
 // Global variable. The string value is the name of the global label.
-struct global { std::string_view name; };
+struct global { std::string name; };
 
 struct loadw;
 struct add;

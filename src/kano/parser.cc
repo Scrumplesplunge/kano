@@ -74,6 +74,7 @@ struct parser : io::reader {
       return inner;
     }
     const auto l = location();
+    if (peek() == '"') return {l, parse_string_literal()};
     const auto word = peek_word();
     if (is_integer(word)) return {l, parse_integer()};
     if (is_identifier(word)) return {l, parse_name()};

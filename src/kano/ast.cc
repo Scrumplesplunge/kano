@@ -30,7 +30,7 @@ type::type(io::location location, T&& value)
 }  // namespace types
 
 // Note: index of variant values matches builtin values.
-using literal = std::int32_t;
+using literal = std::variant<std::int32_t, std::string>;
 struct name { std::string_view value; };
 struct dereference;
 struct address_of;

@@ -18,12 +18,14 @@ template <typename... Ts> overload(Ts...) -> overload<Ts...>;
 
 struct void_type {};
 struct boolean_type {};
+struct byte_type {};
 struct integer_type {};
 struct pointer_type;
 struct function_type;
 
 using type_type = std::variant<
-    void_type, boolean_type, integer_type, pointer_type, function_type>;
+    void_type, boolean_type, byte_type,
+    integer_type, pointer_type, function_type>;
 
 struct type {
   type() = default;
@@ -51,6 +53,7 @@ type::type(T&& value) : value(new type_type{std::forward<T>(value)}) {}
 
 bool operator==(const type& l, const type& r);
 bool operator==(void_type, void_type) { return true; }
+bool operator==(byte_type, byte_type) { return true; }
 bool operator==(boolean_type, boolean_type) { return true; }
 bool operator==(integer_type, integer_type) { return true; }
 bool operator==(const pointer_type& l, const pointer_type& r) {
@@ -65,6 +68,7 @@ bool operator==(const type& l, const type& r) {
 
 int size(void_type) { return 0; }
 int size(boolean_type) { return 1; }
+int size(byte_type) { return 1; }
 int size(integer_type) { return 4; }
 int size(const pointer_type&) { return 4; }
 int size(const function_type&) {
@@ -84,6 +88,10 @@ std::ostream& operator<<(std::ostream& output, void_type) {
 
 std::ostream& operator<<(std::ostream& output, boolean_type) {
   return output << "boolean";
+}
+
+std::ostream& operator<<(std::ostream& output, byte_type) {
+  return output << "byte";
 }
 
 std::ostream& operator<<(std::ostream& output, integer_type) {
@@ -130,9 +138,18 @@ struct global {
 struct program_context {
   std::map<std::string_view, int> symbols;
   ir::ast::program output;
-  symbol symbol(std::string_view name) {
+  kano::symbol symbol(std::string_view name) {
     int id = symbols[name]++;
     return {std::string(name) + "_" + std::to_string(id)};
+  }
+  std::unordered_map<std::string, kano::symbol> string_literals;
+  kano::symbol literal(io::location l, const std::string& value) {
+    auto [i, is_new] = string_literals.try_emplace(value);
+    if (!is_new) return i->second;
+    const auto label = symbol("string");
+    i->second = label;
+    output.emplace(label.name, ir::ast::definition{l, ir::ast::rodata{value}});
+    return label;
   }
   void compile(const ast::module&);
 };
@@ -148,6 +165,7 @@ struct module_context {
     // TODO: Add support for custom types.
     if (name.value == "void") return void_type{};
     if (name.value == "boolean") return boolean_type{};
+    if (name.value == "byte") return byte_type{};
     if (name.value == "integer") return integer_type{};
     die(location) << "no such type '" << name.value << "'.";
   }
@@ -286,8 +304,15 @@ struct function_context {
     module->die(l) << "no such name '" << name << "'.";
   }
   using typed_expr = std::pair<ir::ast::expr, type>;
-  typed_expr gen_expr(io::location, ast::literal x) {
+  typed_expr gen_literal(io::location, std::int32_t x) {
     return {x, integer_type{}};
+  }
+  typed_expr gen_literal(io::location l, const std::string& s) {
+    auto label = module->program->literal(l, s);
+    return {ir::ast::global{label.name}, pointer_type{byte_type{}}};
+  }
+  typed_expr gen_expr(io::location l, ast::literal x) {
+    return std::visit([&](const auto& x) { return gen_literal(l, x); }, x);
   }
   typed_expr gen_expr(io::location l, ast::name n) {
     if (auto* local = lookup_local(n.value)) {
