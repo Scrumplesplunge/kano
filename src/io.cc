@@ -123,6 +123,23 @@ export constexpr bool is_alpha(char c) { return is_lower(c) || is_upper(c); }
 export constexpr bool is_alnum(char c) { return is_digit(c) || is_alpha(c); }
 export constexpr bool is_word(char c) { return c == '_' || is_alnum(c); }
 
+export constexpr bool is_hex(char c) {
+  return ('a' <= c && c <= 'f') ||
+         ('A' <= c && c <= 'F') ||
+         ('0' <= c && c <= '9');
+}
+
+export constexpr int parse_hex(char c) {
+  assert(is_hex(c));
+  switch (c & 0x70) {
+    case 3: return c - '0';
+    case 4: return c - 'A';
+    case 6: return c - 'a';
+  }
+  // Unreachable when the precondition is met.
+  return 0;
+}
+
 export class reader {
  public:
   reader(const char* filename)
@@ -161,6 +178,53 @@ export class reader {
     auto result = peek_word();
     advance(result.size());
     return result;
+  }
+
+  // Precondition: peek() == '"'
+  std::string parse_string_literal() {
+    // TODO: Change this to check for and only accept valid UTF-8.
+    assert(peek() == '"');
+    eat('"');
+    std::string value;
+    for (char c = get(); c != '"'; c = get()) {
+      if (c == '\\') {
+        const auto l = location();
+        c = get();
+        switch (c) {
+          case '0':
+            value.push_back('\0');
+            break;
+          case 'n':
+            value.push_back('\n');
+            break;
+          case 'r':
+            value.push_back('\r');
+            break;
+          case 't':
+            value.push_back('\t');
+            break;
+          case 'x': {
+            char hi = get(), lo = get();
+            if (!is_hex(hi) || !is_hex(lo)) {
+              die(l) << "truncated hex byte.";
+            }
+            value.push_back(parse_hex(hi) << 4 | parse_hex(lo));
+            break;
+          }
+          case '\\':
+          case '\"':
+            value.push_back(c);
+            break;
+          default:
+            die(l) << "invalid escape sequence.";
+        }
+      } else if (c == '\n') {
+        die() << "unexpected newline in string literal.";
+      } else {
+        value.push_back(c);
+      }
+    }
+    return value;
   }
 
   bool eof() {

@@ -57,29 +57,7 @@ struct parser : io::reader {
     assert(peek_word() == "ascii");
     advance(5);
     skip_hspace();
-    eat('"');
-    std::string value;
-    for (char c = get(); c != '"'; c = get()) {
-      if (c == '\\') {
-        c = get();
-        switch (c) {
-          case 'n':
-            value.push_back('\n');
-            break;
-          case '\\':
-          case '\"':
-            value.push_back(c);
-            break;
-          default:
-            die() << "invalid escape sequence.";
-        }
-      } else if (c == '\n') {
-        die() << "unexpected newline in string literal.";
-      } else {
-        value.push_back(c);
-      }
-    }
-    return value;
+    return parse_string_literal();
   }
 
   ast::builtin parse_builtin() {
