@@ -212,7 +212,7 @@ class emitter {
   void emit_lea(operand from, operand to) { emit_op("lea", from, to); }
   void emit_addl(operand from, operand to) { emit_op("addl", from, to); }
   void emit_subl(operand from, operand to) { emit_op("subl", from, to); }
-  void emit_mull(operand from, operand to) { emit_op("mull", from, to); }
+  void emit_mull(operand from) { emit_op("mull", from); }
   void emit_pushl(operand from) { emit_op("pushl", from); }
   void emit_popl(operand to) { emit_op("popl", to); }
   void emit_call(operand f) { emit_op("call *", f); }
@@ -228,6 +228,11 @@ class emitter {
   // TODO: Improve the code generation for expressions. Currently every
   // expression yields a register operand when in reality some could produce
   // different expressions such as immediates or indirect operands.
+
+  // TODO: Extend register allocation to gracefully handle cases where two parts
+  // of an statement must use the same register. For example, `return r[2]` must
+  // put the result in %eax, but needs %eax for the `mul` generated for indexing
+  // the array.
 
   reg32 emit(std::optional<reg32> output, std::int32_t x) {
     const auto reg = allocate_reg32(output);
@@ -270,11 +275,21 @@ class emitter {
   }
 
   reg32 emit(std::optional<reg32> output, const ast::mul& m) {
-    const auto l = emit(output, m.left);
+    allocate_reg32(reg_edx);
+    const auto l = emit(reg_eax, m.left);
     const auto r = emit({}, m.right);
-    emit_mull(r, l);
+    emit_mull(r);
+    deallocate_register(reg_edx);
     deallocate_register(r);
-    return l;
+    if (output && *output != l) {
+      // Move the result.
+      allocate_reg32(*output);
+      emit_movl(l, *output);
+      deallocate_register(l);
+      return *output;
+    } else {
+      return reg_eax;
+    }
   }
 
   reg32 emit(std::optional<reg32> output, const ast::cmp_eq& m) {
