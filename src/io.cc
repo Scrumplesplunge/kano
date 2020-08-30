@@ -242,6 +242,10 @@ export class reader {
     return c;
   }
 
+  bool starts_with(std::string_view prefix) {
+    return remaining_.starts_with(prefix);
+  }
+
   bool try_eat(std::string_view prefix) {
     if (!remaining_.starts_with(prefix)) return false;
     advance(prefix.size());
@@ -288,6 +292,14 @@ export class reader {
       }
     }
     remaining_.remove_prefix(n);
+  }
+
+  void rewind(io::location location) {
+    const auto begin = source_.data(), end = begin + source_.size();
+    assert(begin <= location.position && location.position <= end);
+    line_ = location.line;
+    column_ = location.column;
+    remaining_ = std::string_view(location.position, end - location.position);
   }
 
  private:

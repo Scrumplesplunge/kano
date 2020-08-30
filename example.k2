@@ -1,0 +1,42 @@
+import foo.bar;  # Import something from foo/bar.kano
+
+# Variable declarations and aggregate literals.
+var x : [2]int = [2]int{1, 2};
+var y : bar.mystruct = bar.mystruct{.x = 1, .y = 2};
+
+# Type aliases.
+type mytype = [2]int;
+var y : mytype = mytype{1, 2};
+
+# Classes.
+class vec2 {
+  var x : float;
+  var y : float;
+  function f() : int32 {
+    return 42;
+  }
+}
+var v : vec2 = vec2{.x = 1, .y = 1};
+
+# Exports.
+export class public_vec2 {
+  export var x : float;
+  export var y : float;
+  # This is only accessible in this file.
+  var sneaky : int;
+}
+
+# Functions.
+function fib(n : int32) : int32 {
+  print(v.f());
+  var a : int32 = 0;
+  var b : int32 = 1;
+  var i : int32 = 0;
+  while (i < n) {  # a = fib(i), b = fib(i + 1)
+    i = i + 1;     # a = fib(i - 1), b = fib(i)
+    b = a + b;     # b = fib(i - 1) + fib(i) = fib(i + 1)
+    a = b - a;     # a = fib(i + 1) - fib(i - 1) = fib(i)
+  }
+  # i == n -> a = fib(n)
+  return a;
+}
