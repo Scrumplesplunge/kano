@@ -18,18 +18,21 @@ namespace io {
 export std::string_view open(const char* filename) {
   int fd = ::open(filename, O_RDONLY);
   if (fd < 0) {
-    perror("open");
+    fprintf(stderr, "failed to open file \"%s\": %s\n", filename,
+            strerror(errno));
     exit(1);
   }
   struct stat info;
   if (fstat(fd, &info) < 0) {
-    perror("fstat");
+    fprintf(stderr, "failed to stat file \"%s\": %s\n", filename,
+            strerror(errno));
     exit(1);
   }
   const char* data =
       (const char*)mmap(nullptr, info.st_size, PROT_READ, MAP_SHARED, fd, 0);
   if (data == (caddr_t)-1) {
-    perror("mmap");
+    fprintf(stderr, "failed to mmap file \"%s\": %s\n", filename,
+            strerror(errno));
     exit(1);
   }
   close(fd);
