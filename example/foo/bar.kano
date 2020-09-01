@@ -1,0 +1,7 @@
+# Exports.
+export class public_vec2 {
+  export var x : float;
+  export var y : float;
+  # This is only accessible in this file.
+  var sneaky : int;
+}
