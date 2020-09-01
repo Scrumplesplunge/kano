@@ -64,6 +64,25 @@ class node {
   constexpr value_type* operator->() { return value_.get(); }
   constexpr const value_type* operator->() const { return value_.get(); }
 
+  // Accessors.
+  template <typename T>
+  requires (std::is_same_v<T, Types> || ...)
+  constexpr bool is() const {
+    return value_ && std::holds_alternative<T>(*value_);
+  }
+
+  template <typename T>
+  requires (std::is_same_v<T, Types> || ...)
+  constexpr const T* get() const {
+    return value_ ? std::get_if<T>(value_.get()) : nullptr;
+  }
+
+  template <typename T>
+  requires (std::is_same_v<T, Types> || ...)
+  constexpr T* get() {
+    return value_ ? std::get_if<T>(value_.get()) : nullptr;
+  }
+
   // Mutable visit.
   template <typename Visitor>
   requires (std::is_invocable_v<Visitor, Types&> && ...)
