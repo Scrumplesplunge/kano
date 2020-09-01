@@ -6,7 +6,7 @@ var y : bar.mystruct = bar.mystruct{.x = 1, .y = 2};
 
 # Type aliases.
 type mytype = [2]int;
-var y : mytype = mytype{1, 2};
+var z : mytype = mytype{1, 2};
 
 # Classes.
 class vec2 {
