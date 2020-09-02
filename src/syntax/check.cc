@@ -156,7 +156,7 @@ semantics::ir::symbol module_checker::declare(io::location l,
   const auto id = program.symbol();
   module.implementation.declarations.emplace(
       id, semantics::ir::data_type{l, semantics::ir::user_defined_type{id}});
-  return program.symbol();
+  return id;
 }
 
 semantics::ir::symbol module_checker::declare(
