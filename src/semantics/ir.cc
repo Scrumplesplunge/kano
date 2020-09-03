@@ -23,14 +23,14 @@ using data_type = node<builtin_type, array_type, pointer_type,
 
 // Primitive builtin types.
 enum builtin_type : int {
-  void_type,
   bool_type,
   int32_type,
+  void_type,
 };
 
 // Fixed-size arrays of values.
 struct array_type {
-  int size;
+  std::uint64_t size;
   data_type element;
 };
 

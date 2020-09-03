@@ -1,7 +1,7 @@
 # Exports.
-export class public_vec2 {
-  export var x : float;
-  export var y : float;
+export class mystruct {
+  export var x : int32;
+  export var y : int32;
   # This is only accessible in this file.
-  var sneaky : int;
+  var sneaky : int32;
 }
