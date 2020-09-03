@@ -115,3 +115,14 @@ std::ostream& operator<<(std::ostream& output, const node<Types...>& n) {
   n.visit([&](const auto& x) { output << x; });
   return output;
 }
+
+template <typename T>
+concept comparable = requires(const T& a, const T& b) {
+  { a == b } -> std::same_as<bool>;
+};
+
+export template <typename... Types>
+requires (comparable<Types> && ...)
+bool operator==(const node<Types...>& l, const node<Types...>& r) {
+  return (!l && !r) || *l == *r;
+}
