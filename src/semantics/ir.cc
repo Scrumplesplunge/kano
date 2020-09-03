@@ -2,6 +2,10 @@
 // code, but a consequence of transforming the syntax tree into the IR is that
 // we will catch some basic bugs such as typos or type errors.
 
+module;
+
+#include <cassert>
+
 export module semantics.ir;
 
 export import node;
@@ -83,6 +87,34 @@ bool operator==(const function_type& l, const function_type& r) {
 bool operator==(const function_pointer_type& l,
                 const function_pointer_type& r) {
   return l.pointee == r.pointee;
+}
+
+struct void_value {};
+struct array;
+using value = node<void_value, bool, std::int32_t, array>;
+
+struct array {
+  std::vector<value> contents;
+  data_type element_type;
+};
+
+data_type type_of(const value&);
+builtin_type type_of(const void_value&) { return builtin_type::void_type; }
+builtin_type type_of(bool) { return builtin_type::bool_type; }
+builtin_type type_of(std::int32_t) { return builtin_type::int32_type; }
+array_type type_of(const array& a) {
+  DEBUG_ONLY {
+    for (const auto& x : a.contents) {
+      assert(type_of(x) == a.element_type);
+    }
+  }
+  return array_type{a.contents.size(), a.element_type};
+}
+
+data_type type_of(const value& v) {
+  return v.visit([&](const auto& x) -> data_type {
+    return {v.location(), type_of(x)};
+  });
 }
 
 }  // namespace semantics::ir
