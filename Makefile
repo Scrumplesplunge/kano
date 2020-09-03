@@ -15,10 +15,12 @@ default: debug
 
 BASE_CXXFLAGS = -g3
 DEBUG_CXXFLAGS = -fmodules-cache-path=build/debug  \
-								 -fprebuilt-module-path=build/debug
+								 -fprebuilt-module-path=build/debug \
+								 -DDEBUG_ONLY='if constexpr (true)'
 OPT_CXXFLAGS = -fmodules-cache-path=build/opt  \
 							 -fprebuilt-module-path=build/opt  \
-							 -Ofast -ffunction-sections -fdata-sections -flto -DNDEBUG
+							 -Ofast -ffunction-sections -fdata-sections -flto  \
+							 -DDEBUG_ONLY='if constexpr (false)' -DNDEBUG
 
 BASE_LDFLAGS = -L${CLANG_PREFIX}/lib -Wl,-rpath,${CLANG_PREFIX}/lib
 DEBUG_LDFLAGS =
