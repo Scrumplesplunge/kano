@@ -86,7 +86,7 @@ class node {
   // Mutable visit.
   template <typename Visitor>
   requires (std::is_invocable_v<Visitor, Types&> && ...)
-  auto visit(Visitor&& visitor) {
+  auto visit(Visitor&& visitor) -> decltype(auto) {
     assert(value_);
     return std::visit(std::forward<Visitor>(visitor), **this);
   }
@@ -94,7 +94,7 @@ class node {
   // Immutable visit.
   template <typename Visitor>
   requires (std::is_invocable_v<Visitor, const Types&> && ...)
-  auto visit(Visitor&& visitor) const {
+  auto visit(Visitor&& visitor) const -> decltype(auto) {
     assert(value_);
     return std::visit(std::forward<Visitor>(visitor), **this);
   }
