@@ -216,15 +216,15 @@ struct expression_checker {
 
   // Like generate, but instead of generating the value into a local, generate
   // and store the value at the given address.
-  void generate_into(semantics::ir::local, io::location,
+  void generate_into(const local_info&, io::location,
                      const ast::literal_aggregate&,
                      const semantics::ir::array_type&);
   template <typename T>
-  void generate_into(semantics::ir::local, io::location l, const T&) {
+  void generate_into(const local_info&, io::location l, const T&) {
     io::fatal_message{module.name(), l, io::message::error}
         << "unimplemented expression type.";
   }
-  void generate_into(semantics::ir::local address, const ast::expression&);
+  void generate_into(const local_info&, const ast::expression&);
 };
 
 const environment::name_info& environment::lookup(module_checker& module,
@@ -548,7 +548,7 @@ expression_checker::info expression_checker::generate(
     io::location location, const ast::literal_aggregate& a,
     const semantics::ir::array_type& array) {
   const auto& mem = alloc({location, array});
-  generate_into(mem.first, location, a, array);
+  generate_into(mem, location, a, array);
   return {.category = info::rvalue, .result = &mem};
 }
 
@@ -567,7 +567,7 @@ expression_checker::info expression_checker::generate(
   return e.visit([&](const auto& x) { return generate(e.location(), x); });
 }
 
-void expression_checker::generate_into(semantics::ir::local address,
+void expression_checker::generate_into(const local_info& address,
                                        io::location location,
                                        const ast::literal_aggregate& a,
                                        const semantics::ir::array_type& array) {
@@ -617,16 +617,16 @@ void expression_checker::generate_into(semantics::ir::local address,
       const auto& argument = std::get<ast::expression>(a.arguments[i]);
       const auto& index = add({argument.location(), i});
       const auto& target = add(
-          array.element,
-          {argument.location(), semantics::ir::index{address, index.first}});
-      generate_into(target.first, argument);
+          array.element, {argument.location(),
+                          semantics::ir::index{address.first, index.first}});
+      generate_into(target, argument);
     }
   }
   io::fatal_message{module.name(), a.type.location(), io::message::error}
       << "unimplemented array literal type.";
 }
 
-void expression_checker::generate_into(semantics::ir::local address,
+void expression_checker::generate_into(const local_info& address,
                                        const ast::expression& e) {
   return e.visit(
       [&](const auto& x) { generate_into(address, e.location(), x); });
