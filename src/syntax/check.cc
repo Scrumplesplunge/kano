@@ -218,6 +218,10 @@ struct expression_checker {
   info generate(io::location, const ast::index&);
   info generate(io::location, const ast::negate&);
   info generate(io::location, const ast::add&);
+  info generate(io::location, const ast::subtract&);
+  info generate(io::location, const ast::multiply&);
+  info generate(io::location, const ast::divide&);
+  info generate(io::location, const ast::modulo&);
   template <typename T>
   info generate(io::location l, const T&) {
     static_assert(!std::is_same_v<T, ast::expression>);
@@ -786,6 +790,75 @@ expression_checker::info expression_checker::generate(
   }
   const auto& out = add({location, semantics::ir::int32_type},
                         {location, semantics::ir::add{l.first, r.first}});
+  return {.category = info::rvalue, .result = &out};
+}
+
+expression_checker::info expression_checker::generate(
+    io::location location, const ast::subtract& s) {
+  const auto& l = ensure_loaded(generate(s.left));
+  const auto& r = ensure_loaded(generate(s.right));
+  // TODO: Implement pointer arithmetic.
+  if (!is_integral(l.second)) {
+    io::fatal_message{module.name(), s.left.location(), io::message::error}
+        << "can't add expression of type " << l.second << '.';
+  }
+  if (!is_integral(r.second)) {
+    io::fatal_message{module.name(), s.right.location(), io::message::error}
+        << "can't add expression of type " << r.second << '.';
+  }
+  const auto& out = add({location, semantics::ir::int32_type},
+                        {location, semantics::ir::subtract{l.first, r.first}});
+  return {.category = info::rvalue, .result = &out};
+}
+
+expression_checker::info expression_checker::generate(
+    io::location location, const ast::multiply& m) {
+  const auto& l = ensure_loaded(generate(m.left));
+  const auto& r = ensure_loaded(generate(m.right));
+  if (!is_integral(l.second)) {
+    io::fatal_message{module.name(), m.left.location(), io::message::error}
+        << "can't add expression of type " << l.second << '.';
+  }
+  if (!is_integral(r.second)) {
+    io::fatal_message{module.name(), m.right.location(), io::message::error}
+        << "can't add expression of type " << r.second << '.';
+  }
+  const auto& out = add({location, semantics::ir::int32_type},
+                        {location, semantics::ir::multiply{l.first, r.first}});
+  return {.category = info::rvalue, .result = &out};
+}
+
+expression_checker::info expression_checker::generate(
+    io::location location, const ast::divide& d) {
+  const auto& l = ensure_loaded(generate(d.left));
+  const auto& r = ensure_loaded(generate(d.right));
+  if (!is_integral(l.second)) {
+    io::fatal_message{module.name(), d.left.location(), io::message::error}
+        << "can't add expression of type " << l.second << '.';
+  }
+  if (!is_integral(r.second)) {
+    io::fatal_message{module.name(), d.right.location(), io::message::error}
+        << "can't add expression of type " << r.second << '.';
+  }
+  const auto& out = add({location, semantics::ir::int32_type},
+                        {location, semantics::ir::divide{l.first, r.first}});
+  return {.category = info::rvalue, .result = &out};
+}
+
+expression_checker::info expression_checker::generate(
+    io::location location, const ast::modulo& m) {
+  const auto& l = ensure_loaded(generate(m.left));
+  const auto& r = ensure_loaded(generate(m.right));
+  if (!is_integral(l.second)) {
+    io::fatal_message{module.name(), m.left.location(), io::message::error}
+        << "can't add expression of type " << l.second << '.';
+  }
+  if (!is_integral(r.second)) {
+    io::fatal_message{module.name(), m.right.location(), io::message::error}
+        << "can't add expression of type " << r.second << '.';
+  }
+  const auto& out = add({location, semantics::ir::int32_type},
+                        {location, semantics::ir::modulo{l.first, r.first}});
   return {.category = info::rvalue, .result = &out};
 }
 
