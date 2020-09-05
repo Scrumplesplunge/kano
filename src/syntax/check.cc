@@ -226,18 +226,13 @@ struct expression_checker {
   // Like generate, but instead of generating the value into a local, generate
   // and store the value at the given address.
   void generate_into(const local_info&, io::location,
-                     const ast::identifier&);
-  void generate_into(const local_info&, io::location,
-                     const ast::literal_integer&);
-  void generate_into(const local_info&, io::location,
                      const ast::literal_aggregate&,
                      const semantics::ir::array_type&);
   void generate_into(const local_info&, io::location,
                      const ast::literal_aggregate&);
   template <typename T>
-  void generate_into(const local_info&, io::location l, const T&) {
-    io::fatal_message{module.name(), l, io::message::error}
-        << "unimplemented expression type.";
+  void generate_into(const local_info& address, io::location l, const T& x) {
+    construct_into(address, generate(l, x));
   }
   void generate_into(const local_info&, const ast::expression&);
 };
@@ -747,18 +742,6 @@ expression_checker::info expression_checker::generate(io::location location,
 expression_checker::info expression_checker::generate(
     const ast::expression& e) {
   return e.visit([&](const auto& x) { return generate(e.location(), x); });
-}
-
-void expression_checker::generate_into(const local_info& address,
-                                       io::location location,
-                                       const ast::identifier& i) {
-  construct_into(address, generate(location, i));
-}
-
-void expression_checker::generate_into(const local_info& address,
-                                       io::location location,
-                                       const ast::literal_integer& i) {
-  construct_into(address, generate(location, i));
 }
 
 void expression_checker::generate_into(const local_info& address,
