@@ -217,6 +217,7 @@ struct expression_checker {
   info generate(io::location, const ast::literal_aggregate&,
                 const semantics::ir::array_type&);
   info generate(io::location, const ast::literal_aggregate&);
+  info generate(io::location, const ast::array_type&);
   template <typename T>
   info generate(io::location l, const T&) {
     io::fatal_message{module.name(), l, io::message::error}
@@ -628,6 +629,15 @@ expression_checker::info expression_checker::generate(
   }
   io::fatal_message{module.name(), location, io::message::error}
       << "unimplemented aggregate literal type.";
+}
+
+expression_checker::info expression_checker::generate(
+    io::location location, const ast::array_type&) {
+  io::message{module.name(), location, io::message::error}
+      << "unexpected type in expression.";
+  io::fatal_message{module.name(), location, io::message::note}
+      << "types may only appear in expressions as part of aggregate "
+         "initializers, which have the syntax `type{...}`.";
 }
 
 expression_checker::info expression_checker::generate(
