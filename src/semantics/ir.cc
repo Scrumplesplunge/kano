@@ -206,6 +206,15 @@ struct constant {
 
 struct stack_allocate {};
 
+struct load {
+  local address;
+};
+
+struct store {
+  local address;
+  local value;
+};
+
 struct call {
   symbol op;
   std::vector<local> arguments;
@@ -218,7 +227,7 @@ struct index {
   local offset;
 };
 
-using action = node<constant, stack_allocate, call, index>;
+using action = node<constant, stack_allocate, load, store, call, index>;
 
 struct step {
   local destination;

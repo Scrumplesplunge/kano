@@ -190,16 +190,26 @@ struct expression_checker {
     // An lvalue is a named quantity. The name can be read as `left value`, as
     // if to say that an lvalue may appear on the left side of an assignment.
     // However, this does not mean that all lvalues can be assigned to: an
-    // lvalue may still be of an unassignable type, such as a function.
+    // lvalue may still be of an unassignable type, such as a function. These
+    // are always represented in the IR as a pointer to a memory location.
     //
     // An rvalue is a pure value. For example, a literal integer is an rvalue.
-    enum { lvalue, rvalue } category;
+    // These are represented as inline values, so they can only be
+    // register-sized.
+    //
+    // An xvalue is an expiring lvalue. That is, it's also represented as
+    // a pointer to a memory location, but unlike an lvalue it is to be
+    // considered movable.
+    enum { lvalue, rvalue, xvalue } category;
     const local_info* result;
   };
 
   const local_info& add(semantics::ir::data_type, semantics::ir::action);
   const local_info& add(semantics::ir::value);
   const local_info& alloc(semantics::ir::data_type);
+  const local_info& index(const local_info&, const local_info&);
+  const local_info& load(const local_info&);
+  void store(const local_info&, const local_info&);
 
   info generate(io::location, const ast::identifier&);
   info generate(io::location, const ast::literal_integer&);
@@ -216,6 +226,8 @@ struct expression_checker {
 
   // Like generate, but instead of generating the value into a local, generate
   // and store the value at the given address.
+  void generate_into(const local_info&, io::location,
+                     const ast::literal_integer&);
   void generate_into(const local_info&, io::location,
                      const ast::literal_aggregate&,
                      const semantics::ir::array_type&);
@@ -499,6 +511,62 @@ const expression_checker::local_info& expression_checker::alloc(
   return add(type, {type.location(), semantics::ir::stack_allocate{}});
 }
 
+const expression_checker::local_info& expression_checker::index(
+    const local_info& address, const local_info& offset) {
+  if (offset.second !=
+      semantics::ir::data_type{{}, semantics::ir::builtin_type::int32_type}) {
+    io::fatal_message{module.name(), offset.second.location(),
+                      io::message::error}
+        << "index offset must be integral.";
+  }
+  if (auto* p = address.second.get<semantics::ir::pointer_type>()) {
+    return add(address.second,
+               {offset.second.location(),
+                semantics::ir::index{address.first, offset.first}});
+  }
+  if (auto* a = address.second.get<semantics::ir::array_type>()) {
+    return add(
+        {address.second.location(), semantics::ir::pointer_type{a->element}},
+        {offset.second.location(),
+         semantics::ir::index{address.first, offset.first}});
+  }
+  io::fatal_message{module.name(), offset.second.location(),
+                    io::message::error}
+      << "index address must be either an array type or a pointer type.";
+}
+
+const expression_checker::local_info& expression_checker::load(
+    const local_info& address) {
+  const auto& [a, type] = address;
+  if (auto* p = type.get<semantics::ir::pointer_type>()) {
+    return add(p->pointee, {type.location(), semantics::ir::load{a}});
+  } else {
+    io::fatal_message{module.name(), type.location(), io::message::error}
+        << "cannot load from expression of type " << type << ".";
+  }
+}
+
+void expression_checker::store(const local_info& address,
+                               const local_info& value) {
+  const auto& [source, source_type] = value;
+  const auto& [destination, destination_type] = address;
+  if (auto* p = destination_type.get<semantics::ir::pointer_type>()) {
+    if (p->pointee != source_type) {
+      io::fatal_message{module.name(), destination_type.location(),
+                        io::message::error}
+          << "cannot store expression of type " << source_type
+          << " to address expression of type " << destination_type << ".";
+    }
+    add(p->pointee,
+        {source_type.location(), semantics::ir::store{destination, source}});
+  } else {
+    io::fatal_message{module.name(), destination_type.location(),
+                      io::message::error}
+        << "cannot store to address expression of type " << destination_type
+        << ".";
+  }
+}
+
 expression_checker::info expression_checker::generate(
     io::location location, const ast::identifier& i) {
   // In the IR, we will represent variable references as pointers with an lvalue
@@ -549,7 +617,7 @@ expression_checker::info expression_checker::generate(
     const semantics::ir::array_type& array) {
   const auto& mem = alloc({location, array});
   generate_into(mem, location, a, array);
-  return {.category = info::rvalue, .result = &mem};
+  return {.category = info::xvalue, .result = &mem};
 }
 
 expression_checker::info expression_checker::generate(
@@ -565,6 +633,12 @@ expression_checker::info expression_checker::generate(
 expression_checker::info expression_checker::generate(
     const ast::expression& e) {
   return e.visit([&](const auto& x) { return generate(e.location(), x); });
+}
+
+void expression_checker::generate_into(const local_info& address,
+                                       io::location location,
+                                       const ast::literal_integer& i) {
+  store(address, *generate(location, i).result);
 }
 
 void expression_checker::generate_into(const local_info& address,
@@ -615,12 +689,10 @@ void expression_checker::generate_into(const local_info& address,
     }
     for (std::int32_t i = 0, n = a.arguments.size(); i < n; i++) {
       const auto& argument = std::get<ast::expression>(a.arguments[i]);
-      const auto& index = add({argument.location(), i});
-      const auto& target = add(
-          array.element, {argument.location(),
-                          semantics::ir::index{address.first, index.first}});
+      const auto& target = index(address, add({argument.location(), i}));
       generate_into(target, argument);
     }
+    return;
   }
   io::fatal_message{module.name(), a.type.location(), io::message::error}
       << "unimplemented array literal type.";
