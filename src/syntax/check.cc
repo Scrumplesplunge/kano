@@ -207,7 +207,7 @@ struct expression_checker {
   const local_info& add(semantics::ir::data_type, semantics::ir::action);
   const local_info& add(semantics::ir::value);
   const local_info& alloc(semantics::ir::data_type);
-  const local_info& index(const local_info&, const local_info&);
+  const local_info& index(io::location, const local_info&, const local_info&);
   const local_info& load(const local_info&);
   void store(const local_info&, const local_info&);
 
@@ -520,26 +520,22 @@ const expression_checker::local_info& expression_checker::alloc(
 }
 
 const expression_checker::local_info& expression_checker::index(
-    const local_info& address, const local_info& offset) {
+    io::location location, const local_info& address,
+    const local_info& offset) {
   if (offset.second !=
       semantics::ir::data_type{{}, semantics::ir::builtin_type::int32_type}) {
-    io::fatal_message{module.name(), offset.second.location(),
-                      io::message::error}
+    io::fatal_message{module.name(), location, io::message::error}
         << "index offset must be integral.";
   }
   if (auto* p = address.second.get<semantics::ir::pointer_type>()) {
     return add(address.second,
-               {offset.second.location(),
-                semantics::ir::index{address.first, offset.first}});
+               {location, semantics::ir::index{address.first, offset.first}});
   }
   if (auto* a = address.second.get<semantics::ir::array_type>()) {
-    return add(
-        {address.second.location(), semantics::ir::pointer_type{a->element}},
-        {offset.second.location(),
-         semantics::ir::index{address.first, offset.first}});
+    return add({location, semantics::ir::pointer_type{a->element}},
+               {location, semantics::ir::index{address.first, offset.first}});
   }
-  io::fatal_message{module.name(), offset.second.location(),
-                    io::message::error}
+  io::fatal_message{module.name(), location, io::message::error}
       << "index address must be either an array type or a pointer type.";
 }
 
@@ -750,7 +746,8 @@ void expression_checker::generate_into(const local_info& address,
     }
     for (std::int32_t i = 0, n = a.arguments.size(); i < n; i++) {
       const auto& argument = std::get<ast::expression>(a.arguments[i]);
-      const auto& target = index(address, add({argument.location(), i}));
+      const auto& target =
+          index(argument.location(), address, add({argument.location(), i}));
       generate_into(target, argument);
     }
     return;
