@@ -60,6 +60,7 @@ enum builtin_type : int {
   int32_type,
   void_type,
 };
+std::ostream& operator<<(std::ostream&, builtin_type);
 
 // Fixed-size arrays of values.
 struct array_type {
@@ -68,6 +69,7 @@ struct array_type {
   bool operator==(const array_type&) const = default;
   auto operator<=>(const array_type&) const = default;
 };
+std::ostream& operator<<(std::ostream&, const array_type&);
 
 // Pointers to objects.
 struct pointer_type {
@@ -75,6 +77,7 @@ struct pointer_type {
   bool operator==(const pointer_type&) const = default;
   auto operator<=>(const pointer_type&) const = default;
 };
+std::ostream& operator<<(std::ostream&, const pointer_type&);
 
 // User-defined compound types.
 struct user_defined_type {
@@ -82,6 +85,7 @@ struct user_defined_type {
   bool operator==(const user_defined_type&) const = default;
   auto operator<=>(const user_defined_type&) const = default;
 };
+std::ostream& operator<<(std::ostream&, const user_defined_type&);
 
 // Function types. Note that function types are *not* data types! A function
 // cannot be copied, moved, stored in a class, etc. However, *pointers* to
@@ -98,6 +102,7 @@ struct function_type {
                                            : std::strong_ordering::greater;
   }
 };
+std::ostream& operator<<(std::ostream&, const function_type&);
 
 // Pointers to functions.
 struct function_pointer_type {
@@ -105,8 +110,44 @@ struct function_pointer_type {
   bool operator==(const function_pointer_type&) const = default;
   auto operator<=>(const function_pointer_type&) const = default;
 };
+std::ostream& operator<<(std::ostream&, const function_pointer_type&);
 
 using type = std::variant<data_type, function_type>;
+
+std::ostream& operator<<(std::ostream& output, builtin_type t) {
+  switch (t) {
+    case builtin_type::bool_type: return output << "bool";
+    case builtin_type::int32_type: return output << "int32";
+    case builtin_type::void_type: return output << "void";
+  }
+}
+
+std::ostream& operator<<(std::ostream& output, const array_type& a) {
+  return output << '[' << a.size << ']' << a.element;
+}
+
+std::ostream& operator<<(std::ostream& output, const pointer_type& p) {
+  return output << '*' << p.pointee;
+}
+
+std::ostream& operator<<(std::ostream& output, const user_defined_type& u) {
+  return output << "<type " << (int)u.symbol << '>';
+}
+
+std::ostream& operator<<(std::ostream& output, const function_type& f) {
+  output << "function(";
+  if (!f.parameters.empty()) {
+    output << "_ : " << f.parameters[0];
+    for (int i = 1, n = f.parameters.size(); i < n; i++) {
+      output << ", _ : " << f.parameters[i];
+    }
+  }
+  return output << ") : " << f.return_type;
+}
+
+std::ostream& operator<<(std::ostream& output, const function_pointer_type& f) {
+  return output << "*(" << f.pointee << ")";
+}
 
 struct void_value {};
 struct pointer;
