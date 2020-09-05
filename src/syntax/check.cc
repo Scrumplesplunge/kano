@@ -211,6 +211,7 @@ struct expression_checker {
   const local_info& load(const local_info&);
   void store(const local_info&, const local_info&);
 
+  info generate(io::location, const environment::name_info&);
   info generate(io::location, const ast::identifier&);
   info generate(io::location, const ast::literal_integer&);
   info generate(io::location, const ast::literal_string&);
@@ -218,6 +219,7 @@ struct expression_checker {
                 const semantics::ir::array_type&);
   info generate(io::location, const ast::literal_aggregate&);
   info generate(io::location, const ast::array_type&);
+  info generate(io::location, const ast::dot&);
   template <typename T>
   info generate(io::location l, const T&) {
     io::fatal_message{module.name(), l, io::message::error}
@@ -569,10 +571,7 @@ void expression_checker::store(const local_info& address,
 }
 
 expression_checker::info expression_checker::generate(
-    io::location location, const ast::identifier& i) {
-  // In the IR, we will represent variable references as pointers with an lvalue
-  // category.
-  const auto& info = module.environment.lookup(module, location, i.value);
+    io::location location, const environment::name_info& info) {
   if (const auto* f = std::get_if<semantics::ir::function_type>(&info.type)) {
     const auto& result =
         add({location, semantics::ir::function_pointer{info.symbol, *f}});
@@ -595,6 +594,14 @@ expression_checker::info expression_checker::generate(
   }
   io::fatal_message{module.name(), location, io::message::error}
       << "unimplemented name type.";
+}
+
+expression_checker::info expression_checker::generate(
+    io::location location, const ast::identifier& i) {
+  // In the IR, we will represent variable references as pointers with an lvalue
+  // category.
+  return generate(location,
+                  module.environment.lookup(module, location, i.value));
 }
 
 expression_checker::info expression_checker::generate(
@@ -638,6 +645,23 @@ expression_checker::info expression_checker::generate(
   io::fatal_message{module.name(), location, io::message::note}
       << "types may only appear in expressions as part of aggregate "
          "initializers, which have the syntax `type{...}`.";
+}
+
+expression_checker::info expression_checker::generate(
+    io::location location, const ast::dot& d) {
+  // Normally, `<expr>.bar` is indirection into a class. As a special case,
+  // `foo.bar` may instead mean accessing the name `bar` from the imported
+  // module `some.path.foo`.
+  if (auto* i = d.from.get<ast::identifier>()) {
+    const auto& lhs = module.environment.lookup(module, location, i->value);
+    if (const auto* m = std::get_if<module_type>(&lhs.type)) {
+      return generate(location,
+                      m->exports->lookup(module, location, d.id.value));
+    }
+  }
+  // TODO: Implement access into objects.
+  io::fatal_message{module.name(), location, io::message::error}
+      << "object access is unimplemented.";
 }
 
 expression_checker::info expression_checker::generate(
