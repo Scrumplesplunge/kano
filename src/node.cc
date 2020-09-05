@@ -6,6 +6,7 @@ export module node;
 
 export import io;
 export import <variant>;
+export import <compare>;
 import <concepts>;
 import <iostream>;
 
@@ -99,6 +100,27 @@ class node {
     return std::visit(std::forward<Visitor>(visitor), **this);
   }
 
+  // Comparison operators. Note that these are not constrained with `requires`
+  // clauses. Adding such constraints causes problems with recursively
+  // structured types (i.e. a node which can recursively contain its own type),
+  // which is one of the primary uses for this type. In such cases, a `requires`
+  // clause could be tautological: the node is comparable if the node is
+  // comparable.
+
+  friend bool operator==(const node& l, const node& r) {
+    return (!l && !r) || *l == *r;
+  }
+
+  friend std::strong_ordering operator<=>(const node& l, const node& r) {
+    if (!l.value_ && !r.value_) return std::strong_ordering::equivalent;
+    if (!l.value_) return std::strong_ordering::less;
+    if (!r.value_) return std::strong_ordering::greater;
+    return *l.value_ == *r.value_
+               ? std::strong_ordering::equal
+               : *l.value_ < *r.value_ ? std::strong_ordering::less
+                                       : std::strong_ordering::greater;
+  }
+
  private:
   io::location location_;
   std::unique_ptr<value_type> value_;
@@ -114,15 +136,4 @@ requires (printable<Types> && ...)
 std::ostream& operator<<(std::ostream& output, const node<Types...>& n) {
   n.visit([&](const auto& x) { output << x; });
   return output;
-}
-
-template <typename T>
-concept comparable = requires(const T& a, const T& b) {
-  { a == b } -> std::same_as<bool>;
-};
-
-export template <typename... Types>
-requires (comparable<Types> && ...)
-bool operator==(const node<Types...>& l, const node<Types...>& r) {
-  return (!l && !r) || *l == *r;
 }
