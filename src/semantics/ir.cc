@@ -20,29 +20,6 @@ enum symbol : int {
   builtin_bool,
   builtin_int32,
   builtin_void,
-  builtin_void_load,
-  builtin_void_store,
-  builtin_bool_load,
-  builtin_bool_store,
-  builtin_bool_not,
-  builtin_bool_and,
-  builtin_bool_or,
-  builtin_bool_to_int32,
-  builtin_int32_load,
-  builtin_int32_store,
-  builtin_int32_to_bool,
-  builtin_int32_negate,
-  builtin_int32_add,
-  builtin_int32_subtract,
-  builtin_int32_multiply,
-  builtin_int32_divide,
-  builtin_int32_modulo,
-  builtin_int32_compare_eq,
-  builtin_int32_compare_ne,
-  builtin_int32_compare_lt,
-  builtin_int32_compare_le,
-  builtin_int32_compare_gt,
-  builtin_int32_compare_ge,
   first_user_symbol,
 };
 
@@ -216,7 +193,7 @@ struct store {
 };
 
 struct call {
-  symbol op;
+  local op;
   std::vector<local> arguments;
 };
 

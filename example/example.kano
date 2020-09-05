@@ -1,5 +1,9 @@
 import foo.bar;  # Import something from foo/bar.kano
 
+# Arrays.
+var a : [3]int32 = [3]int32{1, 2, 3};
+var a1 : int32 = a[1];
+
 # Pointers.
 var i : int32 = 1;
 var iptr : *int32 = &i;

@@ -76,10 +76,10 @@ struct module_data {
 };
 
 struct type_info {
-  // function load(address : *T) : T { ... }
-  semantics::ir::symbol load;
-  // function store(address : *T, value : T) { ... }
-  semantics::ir::symbol store;
+  // function copy(destination : *T, source : *T) : void { ... }
+  semantics::ir::symbol copy;
+  // function move(destination : *T, source : *T) : void { ... }
+  semantics::ir::symbol move;
 };
 
 struct checker {
@@ -90,17 +90,7 @@ struct checker {
   // operators for moving values of this type around.
   std::map<semantics::ir::data_type, semantics::ir::symbol> type_by_structure;
   // Map from symbolic type names to the table of operators for the type.
-  std::map<semantics::ir::symbol, type_info> types = {
-      {semantics::ir::symbol::builtin_void,
-       {.load = semantics::ir::symbol::builtin_void_load,
-        .store = semantics::ir::symbol::builtin_void_store}},
-      {semantics::ir::symbol::builtin_bool,
-       {.load = semantics::ir::symbol::builtin_bool_load,
-        .store = semantics::ir::symbol::builtin_bool_store}},
-      {semantics::ir::symbol::builtin_int32,
-       {.load = semantics::ir::symbol::builtin_int32_load,
-        .store = semantics::ir::symbol::builtin_int32_store}},
-  };
+  std::map<semantics::ir::symbol, type_info> types = {};
   environment builtins = {
       .names =
           {
@@ -207,9 +197,11 @@ struct expression_checker {
   const local_info& add(semantics::ir::data_type, semantics::ir::action);
   const local_info& add(semantics::ir::value);
   const local_info& alloc(semantics::ir::data_type);
+  // Given a pointer to an indexable object (i.e. [n]T) and an index i, produce
+  // a pointer to the ith element of the object.
   const local_info& index(io::location, const local_info&, const local_info&);
   const local_info& load(const local_info&);
-  void store(const local_info&, const local_info&);
+  void construct_into(const local_info&, const info&);
 
   info generate(io::location, const environment::name_info&);
   info generate(io::location, const ast::identifier&);
@@ -234,10 +226,14 @@ struct expression_checker {
   // Like generate, but instead of generating the value into a local, generate
   // and store the value at the given address.
   void generate_into(const local_info&, io::location,
+                     const ast::identifier&);
+  void generate_into(const local_info&, io::location,
                      const ast::literal_integer&);
   void generate_into(const local_info&, io::location,
                      const ast::literal_aggregate&,
                      const semantics::ir::array_type&);
+  void generate_into(const local_info&, io::location,
+                     const ast::literal_aggregate&);
   template <typename T>
   void generate_into(const local_info&, io::location l, const T&) {
     io::fatal_message{module.name(), l, io::message::error}
@@ -303,12 +299,10 @@ const type_info& checker::lookup_type(const semantics::ir::data_type& d) {
       type_by_structure.emplace(d, semantics::ir::symbol::none);
   if (!is_new) return types.at(i->second);
   i->second = symbol();
-  // TODO: Generate inline functions for each of these operations.
-  type_info info = {
-    .load = symbol(),
-    .store = symbol(),
-  };
-  return types.emplace(i->second, info).first->second;
+  // TODO: Generate definitions for copy and move in terms of sub-types. These
+  // should be omitted if the sub-types are not copyable or movable,
+  // respectively. For now, treat everything as non-copyable and non-movable.
+  return types.emplace(i->second, type_info{}).first->second;
 }
 
 std::string module_checker::name() const {
@@ -528,16 +522,19 @@ const expression_checker::local_info& expression_checker::index(
     io::fatal_message{module.name(), location, io::message::error}
         << "index offset must be integral.";
   }
-  if (auto* p = address.second.get<semantics::ir::pointer_type>()) {
-    return add(address.second,
-               {location, semantics::ir::index{address.first, offset.first}});
+  // TODO: Make index() support **T as well.
+  auto* p = address.second.get<semantics::ir::pointer_type>();
+  if (!p) {
+    io::fatal_message{module.name(), location, io::message::error}
+        << "index address must be *[n]T, but got " << address.second << ".";
   }
-  if (auto* a = address.second.get<semantics::ir::array_type>()) {
-    return add({location, semantics::ir::pointer_type{a->element}},
-               {location, semantics::ir::index{address.first, offset.first}});
+  auto* a = p->pointee.get<semantics::ir::array_type>();
+  if (!a) {
+    io::fatal_message{module.name(), location, io::message::error}
+        << "index address must be *[n]T, but got " << address.second << ".";
   }
-  io::fatal_message{module.name(), location, io::message::error}
-      << "index address must be either an array type or a pointer type.";
+  return add({location, semantics::ir::pointer_type{a->element}},
+             {location, semantics::ir::index{address.first, offset.first}});
 }
 
 const expression_checker::local_info& expression_checker::load(
@@ -551,24 +548,76 @@ const expression_checker::local_info& expression_checker::load(
   }
 }
 
-void expression_checker::store(const local_info& address,
-                               const local_info& value) {
-  const auto& [source, source_type] = value;
+void expression_checker::construct_into(const local_info& address,
+                                        const info& value) {
   const auto& [destination, destination_type] = address;
-  if (auto* p = destination_type.get<semantics::ir::pointer_type>()) {
-    if (p->pointee != source_type) {
-      io::fatal_message{module.name(), destination_type.location(),
-                        io::message::error}
-          << "cannot store expression of type " << source_type
-          << " to address expression of type " << destination_type << ".";
-    }
-    add(p->pointee,
-        {source_type.location(), semantics::ir::store{destination, source}});
-  } else {
+  auto* const p = destination_type.get<semantics::ir::pointer_type>();
+  if (!p) {
     io::fatal_message{module.name(), destination_type.location(),
                       io::message::error}
         << "cannot store to address expression of type " << destination_type
         << ".";
+  }
+  const auto [category, value_info] = value;
+  const auto& [source, source_type] = *value_info;
+  switch (category) {
+    case info::rvalue: {
+      if (p->pointee != source_type) {
+        io::fatal_message{module.name(), destination_type.location(),
+                          io::message::error}
+            << "cannot store expression of type " << source_type
+            << " to address expression of type " << destination_type << ".";
+      }
+      add(p->pointee,
+          {source_type.location(), semantics::ir::store{destination, source}});
+      break;
+    }
+    case info::lvalue: {
+      if (destination_type != source_type) {
+        io::fatal_message{module.name(), destination_type.location(),
+                          io::message::error}
+            << "cannot copy-construct expression of type " << source_type
+            << " to address expression of type " << destination_type << ".";
+      }
+      const auto& type_info = module.program.lookup_type(destination_type);
+      if (type_info.copy == semantics::ir::none) {
+        io::fatal_message{module.name(), destination_type.location(),
+                          io::message::error}
+            << destination_type << " is not known to be copyable.";
+      }
+      semantics::ir::function_type copy_type{
+          .return_type = {destination_type.location(),
+                          semantics::ir::builtin_type::void_type},
+          .parameters = {destination_type, source_type},
+      };
+      add({destination_type.location(),
+           semantics::ir::function_pointer{type_info.copy,
+                                           std::move(copy_type)}});
+      break;
+    }
+    case info::xvalue: {
+      if (p->pointee != source_type) {
+        io::fatal_message{module.name(), destination_type.location(),
+                          io::message::error}
+            << "cannot move-construct expression of type " << source_type
+            << " to address expression of type " << destination_type << ".";
+      }
+      const auto& type_info = module.program.lookup_type(destination_type);
+      if (type_info.move == semantics::ir::none) {
+        io::fatal_message{module.name(), destination_type.location(),
+                          io::message::error}
+            << destination_type << " is not known to be movable.";
+      }
+      semantics::ir::function_type move_type{
+          .return_type = {destination_type.location(),
+                          semantics::ir::builtin_type::void_type},
+          .parameters = {destination_type, source_type},
+      };
+      add({destination_type.location(),
+           semantics::ir::function_pointer{type_info.move,
+                                           std::move(move_type)}});
+      break;
+    }
   }
 }
 
@@ -702,8 +751,14 @@ expression_checker::info expression_checker::generate(
 
 void expression_checker::generate_into(const local_info& address,
                                        io::location location,
+                                       const ast::identifier& i) {
+  construct_into(address, generate(location, i));
+}
+
+void expression_checker::generate_into(const local_info& address,
+                                       io::location location,
                                        const ast::literal_integer& i) {
-  store(address, *generate(location, i).result);
+  construct_into(address, generate(location, i));
 }
 
 void expression_checker::generate_into(const local_info& address,
@@ -762,6 +817,17 @@ void expression_checker::generate_into(const local_info& address,
   }
   io::fatal_message{module.name(), a.type.location(), io::message::error}
       << "unimplemented array literal type.";
+}
+
+void expression_checker::generate_into(const local_info& address,
+                                       io::location location,
+                                       const ast::literal_aggregate& a) {
+  const auto type = module.check_type(a.type);
+  if (const auto* array = type.get<semantics::ir::array_type>()) {
+    return generate_into(address, location, a, *array);
+  }
+  io::fatal_message{module.name(), location, io::message::error}
+      << "unimplemented aggregate literal type.";
 }
 
 void expression_checker::generate_into(const local_info& address,
