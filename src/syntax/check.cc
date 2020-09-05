@@ -222,6 +222,7 @@ struct expression_checker {
   info generate(io::location, const ast::dot&);
   info generate(io::location, const ast::dereference&);
   info generate(io::location, const ast::address_of&);
+  info generate(io::location, const ast::index&);
   template <typename T>
   info generate(io::location l, const T&) {
     static_assert(!std::is_same_v<T, ast::expression>);
@@ -685,6 +686,13 @@ expression_checker::info expression_checker::generate(
         << "cannot take the address of a temporary.";
   }
   return {.category = info::rvalue, .result = inner.result};
+}
+
+expression_checker::info expression_checker::generate(io::location location,
+                                                      const ast::index& i) {
+  const auto& result =
+      index(location, *generate(i.from).result, *generate(i.index).result);
+  return {.category = info::lvalue, .result = &result};
 }
 
 expression_checker::info expression_checker::generate(
