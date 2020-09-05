@@ -215,6 +215,7 @@ struct expression_checker {
   info generate(io::location, const ast::dereference&);
   info generate(io::location, const ast::address_of&);
   info generate(io::location, const ast::index&);
+  info generate(io::location, const ast::negate&);
   template <typename T>
   info generate(io::location l, const T&) {
     static_assert(!std::is_same_v<T, ast::expression>);
@@ -737,6 +738,40 @@ expression_checker::info expression_checker::generate(io::location location,
   const auto& result =
       index(location, *generate(i.from).result, *generate(i.index).result);
   return {.category = info::lvalue, .result = &result};
+}
+
+constexpr bool is_integral(const semantics::ir::data_type& t) {
+  const auto* b = t.get<semantics::ir::builtin_type>();
+  return b && *b == semantics::ir::int32_type;
+}
+
+expression_checker::info expression_checker::generate(
+    io::location location, const ast::negate& n) {
+  auto [category, result] = generate(n.inner);
+  switch (category) {
+    case info::rvalue: {
+      if (!is_integral(result->second)) {
+        io::fatal_message{module.name(), location, io::message::error}
+            << "can't negate expression of type " << result->second << '.';
+      }
+      const auto& out = add({location, semantics::ir::int32_type},
+                            {location, semantics::ir::negate{result->first}});
+      return {.category = info::rvalue, .result = &out};
+    }
+    case info::lvalue:
+    case info::xvalue: {
+      const auto* p = result->second.get<semantics::ir::pointer_type>();
+      assert(p);
+      if (!is_integral(p->pointee)) {
+        io::fatal_message{module.name(), location, io::message::error}
+            << "can't negate expression of type " << p->pointee << '.';
+      }
+      const auto& l = load(*result);
+      const auto& out = add({location, semantics::ir::int32_type},
+                            {location, semantics::ir::negate{l.first}});
+      return {.category = info::rvalue, .result = &out};
+    }
+  }
 }
 
 expression_checker::info expression_checker::generate(

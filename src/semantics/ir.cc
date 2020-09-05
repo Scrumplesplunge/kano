@@ -197,6 +197,10 @@ struct call {
   std::vector<local> arguments;
 };
 
+struct negate {
+  local inner;
+};
+
 // Given a *T referring to an array of T, produces a *T referring to the nth
 // element of that array.
 struct index {
@@ -204,7 +208,7 @@ struct index {
   local offset;
 };
 
-using action = node<constant, stack_allocate, load, store, call, index>;
+using action = node<constant, stack_allocate, load, store, call, negate, index>;
 
 struct step {
   local destination;
