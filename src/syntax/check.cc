@@ -200,6 +200,7 @@ struct expression_checker {
   // Given a pointer to an indexable object (i.e. [n]T) and an index i, produce
   // a pointer to the ith element of the object.
   const local_info& index(io::location, const local_info&, const local_info&);
+  const local_info& ensure_loaded(const info&);
   const local_info& load(const local_info&);
   void construct_into(const local_info&, const info&);
 
@@ -216,6 +217,7 @@ struct expression_checker {
   info generate(io::location, const ast::address_of&);
   info generate(io::location, const ast::index&);
   info generate(io::location, const ast::negate&);
+  info generate(io::location, const ast::add&);
   template <typename T>
   info generate(io::location l, const T&) {
     static_assert(!std::is_same_v<T, ast::expression>);
@@ -533,6 +535,18 @@ const expression_checker::local_info& expression_checker::index(
              {location, semantics::ir::index{address.first, offset.first}});
 }
 
+const expression_checker::local_info& expression_checker::ensure_loaded(
+    const info& x) {
+  switch (x.category) {
+    case info::rvalue:
+      return *x.result;
+    case info::lvalue:
+    case info::xvalue:
+      assert(x.result->second.is<semantics::ir::pointer_type>());
+      return load(*x.result);
+  }
+}
+
 const expression_checker::local_info& expression_checker::load(
     const local_info& address) {
   const auto& [a, type] = address;
@@ -747,31 +761,32 @@ constexpr bool is_integral(const semantics::ir::data_type& t) {
 
 expression_checker::info expression_checker::generate(
     io::location location, const ast::negate& n) {
-  auto [category, result] = generate(n.inner);
-  switch (category) {
-    case info::rvalue: {
-      if (!is_integral(result->second)) {
-        io::fatal_message{module.name(), location, io::message::error}
-            << "can't negate expression of type " << result->second << '.';
-      }
-      const auto& out = add({location, semantics::ir::int32_type},
-                            {location, semantics::ir::negate{result->first}});
-      return {.category = info::rvalue, .result = &out};
-    }
-    case info::lvalue:
-    case info::xvalue: {
-      const auto* p = result->second.get<semantics::ir::pointer_type>();
-      assert(p);
-      if (!is_integral(p->pointee)) {
-        io::fatal_message{module.name(), location, io::message::error}
-            << "can't negate expression of type " << p->pointee << '.';
-      }
-      const auto& l = load(*result);
-      const auto& out = add({location, semantics::ir::int32_type},
-                            {location, semantics::ir::negate{l.first}});
-      return {.category = info::rvalue, .result = &out};
-    }
+  const auto& l = ensure_loaded(generate(n.inner));
+  if (!is_integral(l.second)) {
+    io::fatal_message{module.name(), location, io::message::error}
+        << "can't negate expression of type " << l.second << '.';
   }
+  const auto& out = add({location, semantics::ir::int32_type},
+                        {location, semantics::ir::negate{l.first}});
+  return {.category = info::rvalue, .result = &out};
+}
+
+expression_checker::info expression_checker::generate(
+    io::location location, const ast::add& a) {
+  const auto& l = ensure_loaded(generate(a.left));
+  const auto& r = ensure_loaded(generate(a.right));
+  // TODO: Implement pointer arithmetic.
+  if (!is_integral(l.second)) {
+    io::fatal_message{module.name(), a.left.location(), io::message::error}
+        << "can't add expression of type " << l.second << '.';
+  }
+  if (!is_integral(r.second)) {
+    io::fatal_message{module.name(), a.right.location(), io::message::error}
+        << "can't add expression of type " << r.second << '.';
+  }
+  const auto& out = add({location, semantics::ir::int32_type},
+                        {location, semantics::ir::add{l.first, r.first}});
+  return {.category = info::rvalue, .result = &out};
 }
 
 expression_checker::info expression_checker::generate(
