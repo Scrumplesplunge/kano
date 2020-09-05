@@ -363,11 +363,13 @@ void module_checker::check(io::location l, const ast::import_statement& i) {
 
 const environment::name_info& module_checker::check(
     io::location l, const ast::variable_definition& v) {
-  const auto& info =
-      environment.define(*this, l, v.id.value, global{check_type(v.type)});
+  const auto type = check_type(v.type);
+  const auto& info = environment.define(*this, l, v.id.value, global{type});
   if (v.initializer) {
     expression_checker checker{*this};
-    checker.generate(*v.initializer);
+    const auto& lhs =
+        checker.add({l, semantics::ir::pointer{info.symbol, type}});
+    checker.generate_into(lhs, *v.initializer);
     // TODO: Consume the resulting expression.
   }
   return info;
