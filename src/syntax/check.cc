@@ -583,7 +583,7 @@ void expression_checker::construct_into(const local_info& address,
       if (type_info.copy == semantics::ir::none) {
         io::fatal_message{module.name(), destination_type.location(),
                           io::message::error}
-            << destination_type << " is not known to be copyable.";
+            << p->pointee << " is not known to be copyable.";
       }
       semantics::ir::function_type copy_type{
           .return_type = {destination_type.location(),
@@ -606,7 +606,7 @@ void expression_checker::construct_into(const local_info& address,
       if (type_info.move == semantics::ir::none) {
         io::fatal_message{module.name(), destination_type.location(),
                           io::message::error}
-            << destination_type << " is not known to be movable.";
+            << p->pointee << " is not known to be movable.";
       }
       semantics::ir::function_type move_type{
           .return_type = {destination_type.location(),

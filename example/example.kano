@@ -2,6 +2,7 @@ import foo.bar;  # Import something from foo/bar.kano
 
 # Arrays.
 var a : [3]int32 = [3]int32{1, 2, 3};
+var a_copy : [3]int32 = a;
 var a1 : int32 = a[1];
 
 # Pointers.
