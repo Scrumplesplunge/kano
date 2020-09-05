@@ -1,5 +1,10 @@
 import foo.bar;  # Import something from foo/bar.kano
 
+# Pointers.
+var i : int32 = 1;
+var iptr : *int32 = &i;
+var i2 : int32 = *iptr;
+
 # Variable declarations and aggregate literals.
 var x : [2]int32 = [2]int32{1, 2};
 var y : bar.mystruct = bar.mystruct{.x = 1, .y = 2};

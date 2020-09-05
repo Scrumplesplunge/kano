@@ -220,10 +220,13 @@ struct expression_checker {
   info generate(io::location, const ast::literal_aggregate&);
   info generate(io::location, const ast::array_type&);
   info generate(io::location, const ast::dot&);
+  info generate(io::location, const ast::dereference&);
+  info generate(io::location, const ast::address_of&);
   template <typename T>
   info generate(io::location l, const T&) {
+    static_assert(!std::is_same_v<T, ast::expression>);
     io::fatal_message{module.name(), l, io::message::error}
-        << "unimplemented expression type.";
+        << "unimplemented expression type " << __PRETTY_FUNCTION__;
   }
   info generate(const ast::expression&);
 
@@ -662,6 +665,28 @@ expression_checker::info expression_checker::generate(
   // TODO: Implement access into objects.
   io::fatal_message{module.name(), location, io::message::error}
       << "object access is unimplemented.";
+}
+
+expression_checker::info expression_checker::generate(
+    io::location location, const ast::dereference& d) {
+  auto inner = generate(d.from);
+  if (auto* p = inner.result->second.get<semantics::ir::pointer_type>()) {
+    return {.category = info::lvalue, .result = inner.result};
+  } else {
+    io::fatal_message{module.name(), location, io::message::error}
+        << "cannot dereference expression of type " << inner.result->second
+        << ".";
+  }
+}
+
+expression_checker::info expression_checker::generate(
+    io::location location, const ast::address_of& a) {
+  auto inner = generate(a.inner);
+  if (inner.category != info::lvalue) {
+    io::fatal_message{module.name(), location, io::message::error}
+        << "cannot take the address of a temporary.";
+  }
+  return {.category = info::rvalue, .result = inner.result};
 }
 
 expression_checker::info expression_checker::generate(
