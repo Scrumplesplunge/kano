@@ -255,8 +255,8 @@ const environment::name_info& environment::lookup(module_checker& module,
   auto i = names.find(name);
   if (i != names.end()) return i->second;
   if (parent) return parent->lookup(module, location, name);
-  io::fatal_message{module.name(), location, io::message::error}
-      << "undefined name " << std::quoted(name) << ".";
+  io::fatal_message{location, io::message::error} << "undefined name "
+                                                  << std::quoted(name) << ".";
 }
 
 const environment::name_info& environment::define(
@@ -265,10 +265,9 @@ const environment::name_info& environment::define(
   auto [i, is_new] = names.emplace(
       id, name_info{module.name(), l, symbol, id, std::move(type)});
   if (!is_new) {
-    const auto file = module.name();
-    io::message{file, l, io::message::error}
-        << "redeclaration of variable " << std::quoted(id) << ".";
-    io::fatal_message{file, i->second.location, io::message::note}
+    io::message{l, io::message::error} << "redeclaration of variable "
+                                       << std::quoted(id) << ".";
+    io::fatal_message{i->second.location, io::message::note}
         << "previously declared here.";
   }
   return i->second;
@@ -332,9 +331,9 @@ void module_checker::check() {
   while (i != end) {
     if (i->is<ast::import_statement>()) {
       const auto f = name();
-      io::message{f, i->location(), io::message::error}
+      io::message{i->location(), io::message::error}
           << "cannot have an import here.";
-      io::fatal_message{f, prelude_end, io::message::note}
+      io::fatal_message{prelude_end, io::message::note}
           << "module prelude ended here.";
     }
     if (auto* d = i->get<ast::definition>()) {
@@ -342,7 +341,7 @@ void module_checker::check() {
     } else if (auto* e = i->get<ast::exported_definition>()) {
       check(*e);
     } else {
-      io::fatal_message{name(), i->location(), io::message::error}
+      io::fatal_message{i->location(), io::message::error}
           << "only definitions may appear at the top-level.";
     }
     ++i;
@@ -358,7 +357,7 @@ void module_checker::check(io::location l, const ast::import_statement& i) {
   if (!m.checked) {
     // TODO: Improve the error message for this case. It should be fairly easy
     // to display the cycle.
-    io::fatal_message{name(), l, io::message::error} << "cyclic import.";
+    io::fatal_message{l, io::message::error} << "cyclic import.";
   }
   environment.define(*this, l, i.path.back(), module_type{&m.exports});
 }
@@ -427,18 +426,16 @@ semantics::ir::data_type module_checker::check_type(
     if (const auto* type = std::get_if<type_type>(&info.type)) {
       return type->type;
     } else {
-      const auto file = name();
-      io::message{file, e.location(), io::message::error}
+      io::message{e.location(), io::message::error}
           << std::quoted(i->value) << " does not represent a type.";
-      io::fatal_message{info.file, info.location, io::message::note}
-          << "defined here.";
+      io::fatal_message{info.location, io::message::note} << "defined here.";
     }
   }
   if (const auto* a = e.get<ast::array_type>()) {
     const auto* i = a->size.get<ast::literal_integer>();
     if (!i) {
       // TODO: Support nontrivial size expressions.
-      io::fatal_message{name(), a->size.location(), io::message::error}
+      io::fatal_message{a->size.location(), io::message::error}
           << "support for nontrivial size expressions is unimplemented.";
     }
     auto element = check_type(a->element);
@@ -456,11 +453,10 @@ semantics::ir::data_type module_checker::check_type(
       return type->type;
     } else {
       // TODO: Improve this error message to show what it actually is.
-      io::fatal_message{name(), e.location(), io::message::error}
-          << "expected type.";
+      io::fatal_message{e.location(), io::message::error} << "expected type.";
     }
   }
-  io::fatal_message{name(), e.location(), io::message::error}
+  io::fatal_message{e.location(), io::message::error}
       << "unsupported type expression.";
 }
 
@@ -476,11 +472,11 @@ const environment::name_info& module_checker::resolve(
       // nice to point the user at the definition for the LHS in this case.
       return m->exports->lookup(*this, e.location(), d->id.value);
     }
-    io::fatal_message{name(), e.location(), io::message::error}
+    io::fatal_message{e.location(), io::message::error}
         << "expected module on left hand side of '.'.";
   }
   // TODO: Implement support for nested types.
-  io::fatal_message{name(), e.location(), io::message::error}
+  io::fatal_message{e.location(), io::message::error}
       << "unsupported scope expression.";
 }
 
@@ -523,18 +519,18 @@ const expression_checker::local_info& expression_checker::index(
     const local_info& offset) {
   if (offset.second !=
       semantics::ir::data_type{{}, semantics::ir::builtin_type::int32_type}) {
-    io::fatal_message{module.name(), location, io::message::error}
+    io::fatal_message{location, io::message::error}
         << "index offset must be integral.";
   }
   // TODO: Make index() support **T as well.
   auto* p = address.second.get<semantics::ir::pointer_type>();
   if (!p) {
-    io::fatal_message{module.name(), location, io::message::error}
+    io::fatal_message{location, io::message::error}
         << "index address must be *[n]T, but got " << address.second << ".";
   }
   auto* a = p->pointee.get<semantics::ir::array_type>();
   if (!a) {
-    io::fatal_message{module.name(), location, io::message::error}
+    io::fatal_message{location, io::message::error}
         << "index address must be *[n]T, but got " << address.second << ".";
   }
   return add({location, semantics::ir::pointer_type{a->element}},
@@ -559,7 +555,7 @@ const expression_checker::local_info& expression_checker::load(
   if (auto* p = type.get<semantics::ir::pointer_type>()) {
     return add(p->pointee, {type.location(), semantics::ir::load{a}});
   } else {
-    io::fatal_message{module.name(), type.location(), io::message::error}
+    io::fatal_message{type.location(), io::message::error}
         << "cannot load from expression of type " << type << ".";
   }
 }
@@ -587,8 +583,7 @@ void expression_checker::construct_into(const local_info& address,
   const auto& [destination, destination_type] = address;
   auto* const p = destination_type.get<semantics::ir::pointer_type>();
   if (!p) {
-    io::fatal_message{module.name(), destination_type.location(),
-                      io::message::error}
+    io::fatal_message{destination_type.location(), io::message::error}
         << "cannot store to address expression of type " << destination_type
         << ".";
   }
@@ -597,8 +592,7 @@ void expression_checker::construct_into(const local_info& address,
   switch (category) {
     case info::rvalue: {
       if (p->pointee != source_type) {
-        io::fatal_message{module.name(), destination_type.location(),
-                          io::message::error}
+        io::fatal_message{destination_type.location(), io::message::error}
             << "cannot store expression of type " << source_type
             << " to address expression of type " << destination_type << ".";
       }
@@ -608,15 +602,13 @@ void expression_checker::construct_into(const local_info& address,
     }
     case info::lvalue: {
       if (destination_type != source_type) {
-        io::fatal_message{module.name(), destination_type.location(),
-                          io::message::error}
+        io::fatal_message{destination_type.location(), io::message::error}
             << "cannot copy-construct expression of type " << source_type
             << " to address expression of type " << destination_type << ".";
       }
       const auto& type_info = module.program.lookup_type(destination_type);
       if (type_info.copy == semantics::ir::none) {
-        io::fatal_message{module.name(), destination_type.location(),
-                          io::message::error}
+        io::fatal_message{destination_type.location(), io::message::error}
             << p->pointee << " is not known to be copyable.";
       }
       semantics::ir::function_type copy_type{
@@ -631,15 +623,13 @@ void expression_checker::construct_into(const local_info& address,
     }
     case info::xvalue: {
       if (p->pointee != source_type) {
-        io::fatal_message{module.name(), destination_type.location(),
-                          io::message::error}
+        io::fatal_message{destination_type.location(), io::message::error}
             << "cannot move-construct expression of type " << source_type
             << " to address expression of type " << destination_type << ".";
       }
       const auto& type_info = module.program.lookup_type(destination_type);
       if (type_info.move == semantics::ir::none) {
-        io::fatal_message{module.name(), destination_type.location(),
-                          io::message::error}
+        io::fatal_message{destination_type.location(), io::message::error}
             << p->pointee << " is not known to be movable.";
       }
       semantics::ir::function_type move_type{
@@ -669,18 +659,17 @@ expression_checker::info expression_checker::generate(
   }
   if (const auto* l = std::get_if<local>(&info.type)) {
     // TODO: Implement code generation for accessing local variables.
-    io::fatal_message{module.name(), location, io::message::error}
+    io::fatal_message{location, io::message::error}
         << "local variables are unimplemented.";
   }
   if (const auto* t = std::get_if<type_type>(&info.type)) {
-    io::message{module.name(), location, io::message::error}
+    io::message{location, io::message::error}
         << "a type may not appear in an expression.";
-    io::fatal_message{module.name(), location, io::message::note}
+    io::fatal_message{location, io::message::note}
         << "a value literal would have the syntax `type{...}`.";
   }
   // TODO: Find a nice way to ensure that this function is exhaustative.
-  io::fatal_message{module.name(), location, io::message::error}
-      << "unimplemented name type.";
+  io::fatal_message{location, io::message::error} << "unimplemented name type.";
 }
 
 expression_checker::info expression_checker::generate(
@@ -694,7 +683,7 @@ expression_checker::info expression_checker::generate(
 expression_checker::info expression_checker::generate(
     io::location location, const ast::literal_integer& i) {
   if (i.value > std::numeric_limits<std::int32_t>::max()) {
-    io::fatal_message{module.name(), location, io::message::error}
+    io::fatal_message{location, io::message::error}
         << "integer literal exceeds the maximum allowed value for int32.";
   }
   const auto& result = add({location, std::int32_t(i.value)});
@@ -704,7 +693,7 @@ expression_checker::info expression_checker::generate(
 expression_checker::info expression_checker::generate(
     io::location location, const ast::literal_string&) {
   // TODO: Implement string literals.
-  io::fatal_message{module.name(), location, io::message::error}
+  io::fatal_message{location, io::message::error}
       << "string literals are unimplemented.";
 }
 
@@ -723,15 +712,14 @@ expression_checker::info expression_checker::generate(
     return generate(location, a, *array);
   }
   // TODO: Implement object literals.
-  io::fatal_message{module.name(), location, io::message::error}
+  io::fatal_message{location, io::message::error}
       << "unimplemented aggregate literal type.";
 }
 
 expression_checker::info expression_checker::generate(
     io::location location, const ast::array_type&) {
-  io::message{module.name(), location, io::message::error}
-      << "unexpected type in expression.";
-  io::fatal_message{module.name(), location, io::message::note}
+  io::message{location, io::message::error} << "unexpected type in expression.";
+  io::fatal_message{location, io::message::note}
       << "types may only appear in expressions as part of aggregate "
          "initializers, which have the syntax `type{...}`.";
 }
@@ -749,7 +737,7 @@ expression_checker::info expression_checker::generate(
     }
   }
   // TODO: Implement access into objects.
-  io::fatal_message{module.name(), location, io::message::error}
+  io::fatal_message{location, io::message::error}
       << "object access is unimplemented.";
 }
 
@@ -759,7 +747,7 @@ expression_checker::info expression_checker::generate(
   if (auto* p = inner.result->second.get<semantics::ir::pointer_type>()) {
     return {.category = info::lvalue, .result = inner.result};
   } else {
-    io::fatal_message{module.name(), location, io::message::error}
+    io::fatal_message{location, io::message::error}
         << "cannot dereference expression of type " << inner.result->second
         << ".";
   }
@@ -769,7 +757,7 @@ expression_checker::info expression_checker::generate(
     io::location location, const ast::address_of& a) {
   auto inner = generate(a.inner);
   if (inner.category != info::lvalue) {
-    io::fatal_message{module.name(), location, io::message::error}
+    io::fatal_message{location, io::message::error}
         << "cannot take the address of a temporary.";
   }
   return {.category = info::rvalue, .result = inner.result};
@@ -794,7 +782,7 @@ expression_checker::info expression_checker::generate(
     io::location location, const ast::negate& n) {
   const auto& l = ensure_loaded(generate(n.inner));
   if (!is_integral(l.second)) {
-    io::fatal_message{module.name(), location, io::message::error}
+    io::fatal_message{location, io::message::error}
         << "can't negate expression of type " << l.second << '.';
   }
   const auto& out = add({location, semantics::ir::int32_type},
@@ -808,11 +796,11 @@ expression_checker::info expression_checker::generate(
   const auto& r = ensure_loaded(generate(a.right));
   // TODO: Implement pointer arithmetic.
   if (!is_integral(l.second)) {
-    io::fatal_message{module.name(), a.left.location(), io::message::error}
+    io::fatal_message{a.left.location(), io::message::error}
         << "can't add expression of type " << l.second << '.';
   }
   if (!is_integral(r.second)) {
-    io::fatal_message{module.name(), a.right.location(), io::message::error}
+    io::fatal_message{a.right.location(), io::message::error}
         << "can't add expression of type " << r.second << '.';
   }
   const auto& out = add({location, semantics::ir::int32_type},
@@ -826,11 +814,11 @@ expression_checker::info expression_checker::generate(
   const auto& r = ensure_loaded(generate(s.right));
   // TODO: Implement pointer arithmetic.
   if (!is_integral(l.second)) {
-    io::fatal_message{module.name(), s.left.location(), io::message::error}
+    io::fatal_message{s.left.location(), io::message::error}
         << "can't add expression of type " << l.second << '.';
   }
   if (!is_integral(r.second)) {
-    io::fatal_message{module.name(), s.right.location(), io::message::error}
+    io::fatal_message{s.right.location(), io::message::error}
         << "can't add expression of type " << r.second << '.';
   }
   const auto& out = add({location, semantics::ir::int32_type},
@@ -843,11 +831,11 @@ expression_checker::info expression_checker::generate(
   const auto& l = ensure_loaded(generate(m.left));
   const auto& r = ensure_loaded(generate(m.right));
   if (!is_integral(l.second)) {
-    io::fatal_message{module.name(), m.left.location(), io::message::error}
+    io::fatal_message{m.left.location(), io::message::error}
         << "can't add expression of type " << l.second << '.';
   }
   if (!is_integral(r.second)) {
-    io::fatal_message{module.name(), m.right.location(), io::message::error}
+    io::fatal_message{m.right.location(), io::message::error}
         << "can't add expression of type " << r.second << '.';
   }
   const auto& out = add({location, semantics::ir::int32_type},
@@ -860,11 +848,11 @@ expression_checker::info expression_checker::generate(
   const auto& l = ensure_loaded(generate(d.left));
   const auto& r = ensure_loaded(generate(d.right));
   if (!is_integral(l.second)) {
-    io::fatal_message{module.name(), d.left.location(), io::message::error}
+    io::fatal_message{d.left.location(), io::message::error}
         << "can't add expression of type " << l.second << '.';
   }
   if (!is_integral(r.second)) {
-    io::fatal_message{module.name(), d.right.location(), io::message::error}
+    io::fatal_message{d.right.location(), io::message::error}
         << "can't add expression of type " << r.second << '.';
   }
   const auto& out = add({location, semantics::ir::int32_type},
@@ -877,11 +865,11 @@ expression_checker::info expression_checker::generate(
   const auto& l = ensure_loaded(generate(m.left));
   const auto& r = ensure_loaded(generate(m.right));
   if (!is_integral(l.second)) {
-    io::fatal_message{module.name(), m.left.location(), io::message::error}
+    io::fatal_message{m.left.location(), io::message::error}
         << "can't add expression of type " << l.second << '.';
   }
   if (!is_integral(r.second)) {
-    io::fatal_message{module.name(), m.right.location(), io::message::error}
+    io::fatal_message{m.right.location(), io::message::error}
         << "can't add expression of type " << r.second << '.';
   }
   const auto& out = add({location, semantics::ir::int32_type},
@@ -896,7 +884,7 @@ expression_checker::info expression_checker::generate(
   const auto& ltype = effective_type(l);
   const auto& rtype = effective_type(r);
   if (ltype != rtype) {
-    io::fatal_message{module.name(), location, io::message::error}
+    io::fatal_message{location, io::message::error}
         << "type mismatch in comparison: " << ltype << " vs. " << rtype << ".";
   }
   if (auto* b = ltype.get<semantics::ir::builtin_type>()) {
@@ -915,7 +903,7 @@ expression_checker::info expression_checker::generate(
     }
   }
   // TODO: Implement comparison of other types.
-  io::fatal_message{module.name(), location, io::message::error}
+  io::fatal_message{location, io::message::error}
       << "comparison between objects of type " << ltype << " is unimplemented.";
 }
 
@@ -926,7 +914,7 @@ expression_checker::info expression_checker::generate(
   const auto& ltype = effective_type(l);
   const auto& rtype = effective_type(r);
   if (ltype != rtype) {
-    io::fatal_message{module.name(), location, io::message::error}
+    io::fatal_message{location, io::message::error}
         << "type mismatch in comparison: " << ltype << " vs. " << rtype << ".";
   }
   if (auto* b = ltype.get<semantics::ir::builtin_type>()) {
@@ -945,7 +933,7 @@ expression_checker::info expression_checker::generate(
     }
   }
   // TODO: Implement comparison of other types.
-  io::fatal_message{module.name(), location, io::message::error}
+  io::fatal_message{location, io::message::error}
       << "comparison between objects of type " << ltype << " is unimplemented.";
 }
 
@@ -956,7 +944,7 @@ expression_checker::info expression_checker::generate(
   const auto& ltype = effective_type(l);
   const auto& rtype = effective_type(r);
   if (ltype != rtype) {
-    io::fatal_message{module.name(), location, io::message::error}
+    io::fatal_message{location, io::message::error}
         << "type mismatch in comparison: " << ltype << " vs. " << rtype << ".";
   }
   if (auto* b = ltype.get<semantics::ir::builtin_type>()) {
@@ -975,7 +963,7 @@ expression_checker::info expression_checker::generate(
     }
   }
   // TODO: Implement comparison of other types.
-  io::fatal_message{module.name(), location, io::message::error}
+  io::fatal_message{location, io::message::error}
       << "comparison between objects of type " << ltype << " is unimplemented.";
 }
 
@@ -986,7 +974,7 @@ expression_checker::info expression_checker::generate(
   const auto& ltype = effective_type(l);
   const auto& rtype = effective_type(r);
   if (ltype != rtype) {
-    io::fatal_message{module.name(), location, io::message::error}
+    io::fatal_message{location, io::message::error}
         << "type mismatch in comparison: " << ltype << " vs. " << rtype << ".";
   }
   if (auto* b = ltype.get<semantics::ir::builtin_type>()) {
@@ -1005,7 +993,7 @@ expression_checker::info expression_checker::generate(
     }
   }
   // TODO: Implement comparison of other types.
-  io::fatal_message{module.name(), location, io::message::error}
+  io::fatal_message{location, io::message::error}
       << "comparison between objects of type " << ltype << " is unimplemented.";
 }
 
@@ -1016,7 +1004,7 @@ expression_checker::info expression_checker::generate(
   const auto& ltype = effective_type(l);
   const auto& rtype = effective_type(r);
   if (ltype != rtype) {
-    io::fatal_message{module.name(), location, io::message::error}
+    io::fatal_message{location, io::message::error}
         << "type mismatch in comparison: " << ltype << " vs. " << rtype << ".";
   }
   if (auto* b = ltype.get<semantics::ir::builtin_type>()) {
@@ -1035,7 +1023,7 @@ expression_checker::info expression_checker::generate(
     }
   }
   // TODO: Implement comparison of other types.
-  io::fatal_message{module.name(), location, io::message::error}
+  io::fatal_message{location, io::message::error}
       << "comparison between objects of type " << ltype << " is unimplemented.";
 }
 
@@ -1046,7 +1034,7 @@ expression_checker::info expression_checker::generate(
   const auto& ltype = effective_type(l);
   const auto& rtype = effective_type(r);
   if (ltype != rtype) {
-    io::fatal_message{module.name(), location, io::message::error}
+    io::fatal_message{location, io::message::error}
         << "type mismatch in comparison: " << ltype << " vs. " << rtype << ".";
   }
   if (auto* b = ltype.get<semantics::ir::builtin_type>()) {
@@ -1065,7 +1053,7 @@ expression_checker::info expression_checker::generate(
     }
   }
   // TODO: Implement comparison of other types.
-  io::fatal_message{module.name(), location, io::message::error}
+  io::fatal_message{location, io::message::error}
       << "comparison between objects of type " << ltype << " is unimplemented.";
 }
 
@@ -1087,7 +1075,7 @@ expression_checker::info expression_checker::generate(
     io::location location, const ast::logical_not& n) {
   const auto inner = generate(n.inner);
   if (!is_bool(inner.result->second)) {
-    io::fatal_message{module.name(), location, io::message::error}
+    io::fatal_message{location, io::message::error}
         << "cannot logically negate expression of type " << inner.result->second
         << ".";
   }
@@ -1104,7 +1092,7 @@ expression_checker::info expression_checker::generate(
   // TODO: Implement function calls. This will require deciding how to pass each
   // value type. Probably a simple option is to pass all builtins in registers
   // and all aggregate types by reference.
-  io::fatal_message{module.name(), location, io::message::error}
+  io::fatal_message{location, io::message::error}
       << "function calls are unimplemented.";
 }
 
@@ -1126,7 +1114,7 @@ void expression_checker::generate_into(const local_info& address,
   for (const auto& argument : a.arguments) {
     if (auto* e = std::get_if<ast::expression>(&argument)) {
       if (has_index) {
-        io::fatal_message{module.name(), e->location(), io::message::error}
+        io::fatal_message{e->location(), io::message::error}
             << "cannot mix bare expressions and indexed expressions in an "
                "array literal.";
       }
@@ -1135,15 +1123,13 @@ void expression_checker::generate_into(const local_info& address,
     }
     if (auto* f = std::get_if<ast::literal_aggregate::field_assignment>(
             &argument)) {
-      io::fatal_message{module.name(), f->value.location(),
-                        io::message::error}
+      io::fatal_message{f->value.location(), io::message::error}
           << "cannot have field assignments in an array literal.";
     }
     if (auto* i = std::get_if<ast::literal_aggregate::index_assignment>(
             &argument)) {
       if (has_bare) {
-        io::fatal_message{module.name(), i->value.location(),
-                          io::message::error}
+        io::fatal_message{i->value.location(), io::message::error}
             << "cannot mix bare expressions and indexed expressions in an "
                "array literal.";
       }
@@ -1153,9 +1139,9 @@ void expression_checker::generate_into(const local_info& address,
   assert(!has_index || !has_bare);
   if (has_bare) {
     if (a.arguments.size() != array.size) {
-      io::message{module.name(), location, io::message::error}
+      io::message{location, io::message::error}
           << "unindexed array literals must initialize every value.";
-      io::fatal_message{module.name(), a.type.location(), io::message::note}
+      io::fatal_message{a.type.location(), io::message::note}
           << "expected " << array.size << " initializers but got "
           << a.arguments.size() << ".";
     }
@@ -1168,7 +1154,7 @@ void expression_checker::generate_into(const local_info& address,
     return;
   }
   // TODO: Implement designated array literals, e.g. `[256]bool{[42] = true}`.
-  io::fatal_message{module.name(), a.type.location(), io::message::error}
+  io::fatal_message{a.type.location(), io::message::error}
       << "unimplemented array literal type.";
 }
 
@@ -1180,7 +1166,7 @@ void expression_checker::generate_into(const local_info& address,
     return generate_into(address, location, a, *array);
   }
   // TODO: Implement object literals.
-  io::fatal_message{module.name(), location, io::message::error}
+  io::fatal_message{location, io::message::error}
       << "unimplemented aggregate literal type.";
 }
 

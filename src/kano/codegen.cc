@@ -170,7 +170,7 @@ struct module_context {
   std::string_view filename;
   std::map<std::string_view, global> globals = {};
   auto die(io::location location) const {
-    return io::fatal_message(filename, location, io::message::error);
+    return io::fatal_message(location, io::message::error);
   }
   type check_type(io::location location, kano::ast::types::name name) const {
     // TODO: Refactor the name resolution logic to use the same code for
@@ -228,9 +228,9 @@ struct module_context {
           name,
           global{definition.location, program->symbol(name), std::move(type)});
       if (!is_new) {
-        io::message(filename, definition.location, io::message::error)
+        io::message(definition.location, io::message::error)
             << "redefinition of '" << name << "'.";
-        io::message(filename, definition.location, io::message::note)
+        io::message(definition.location, io::message::note)
             << "previous definition is here.";
         std::exit(1);
       }
@@ -534,10 +534,9 @@ struct function_context {
   }
   void compile(io::location l, const ast::variable_declaration& v) {
     if (auto* local = lookup_local(v.name)) {
-      io::message(module->filename, l, io::message::error)
+      io::message(l, io::message::error)
           << "redefinition of '" << v.name << "'.";
-      io::message(module->filename, l, io::message::note)
-          << "previous definition is here.";
+      io::message(l, io::message::note) << "previous definition is here.";
       std::exit(1);
     }
     scope& scope = locals.back();

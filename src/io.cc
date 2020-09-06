@@ -50,6 +50,7 @@ export const input& open(const char* filename) {
 export struct location {
   int line = 1, column = 1;
   const char* position = "\n";
+  const char* filename = "<unknown>";
   std::string_view line_contents() const {
     const char* const first = position - (column - 1);
     const char* last = position;
@@ -85,10 +86,9 @@ export class message {
     warning,
     error,
   };
-  message(std::string_view filename, location location, type type)
-      : location_(location) {
-    buffer_ << color::white << filename << ':' << location_.line << ':'
-            << location_.column << color::reset << ": ";
+  message(location location, type type) : location_(location) {
+    buffer_ << color::white << location_.filename << ':' << location_.line
+            << ':' << location_.column << color::reset << ": ";
     switch (type) {
       case note:
         buffer_ << color::gray << "note" << color::reset;
@@ -302,11 +302,14 @@ export class reader {
   void eat(char c) { return eat(std::string_view(&c, 1)); }
 
   location location() const {
-    return {.line = line_, .column = column_, .position = remaining_.data()};
+    return {.line = line_,
+            .column = column_,
+            .position = remaining_.data(),
+            .filename = input_.name.c_str()};
   }
 
   io::message message(message::type type, io::location l) const {
-    return {input_.name, l, type};
+    return {l, type};
   }
 
   io::message message(message::type type) const {
@@ -314,7 +317,7 @@ export class reader {
   }
 
   io::fatal_message die(io::location l) const {
-    return {input_.name, l, io::message::error};
+    return {l, io::message::error};
   }
 
   io::fatal_message die() const { return die(location()); }

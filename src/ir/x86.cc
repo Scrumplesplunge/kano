@@ -184,7 +184,7 @@ class emitter {
   }
 
   io::fatal_message die() const {
-    return {"<unknown>", location_, io::message::error};
+    return {location_, io::message::error};
   }
 
   void emit_op(std::string_view op) {
