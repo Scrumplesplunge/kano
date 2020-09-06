@@ -31,9 +31,23 @@ constexpr bool is_identifier(std::string_view value) {
 struct parser : io::reader {
   using reader::reader;
 
-  bool try_symbol(std::string_view symbol) {
+  bool try_eat(std::string_view prefix) {
     skip_whitespace_and_comments();
-    return try_eat(symbol);
+    return reader::try_eat(prefix);
+  }
+
+  void eat(std::string_view prefix) {
+    skip_whitespace_and_comments();
+    reader::eat(prefix);
+  }
+
+  bool try_symbol(std::string_view expected) {
+    assert(std::all_of(expected.begin(), expected.end(), io::is_symbol));
+    skip_whitespace_and_comments();
+    auto s = peek_symbol();
+    if (s != expected) return false;
+    advance(s.size());
+    return true;
   }
 
   void symbol(std::string_view symbol) {
@@ -94,11 +108,11 @@ struct parser : io::reader {
   ast::expression parse_type() {
     skip_whitespace_and_comments();
     const auto l = location();
-    if (try_symbol("[")) {
+    if (try_eat("[")) {
       auto index = parse_expression();
-      symbol("]");
+      eat("]");
       return {l, ast::array_type{std::move(index), parse_type()}};
-    } else if (try_symbol("*")) {
+    } else if (try_eat("*")) {
       return {l, ast::dereference{parse_type()}};
     } else {
       return parse_qualified();
@@ -106,10 +120,10 @@ struct parser : io::reader {
   }
 
   ast::expression parse_atom() {
-    if (try_symbol("(")) {
+    if (try_eat("(")) {
       auto inner = parse_expression();
       skip_whitespace_and_comments();
-      symbol(")");
+      eat(")");
       return inner;
     }
     if (peek() == '[') return parse_type();
@@ -123,11 +137,11 @@ struct parser : io::reader {
 
   ast::literal_aggregate::element_type parse_aggregate_value() {
     const auto l = location();
-    if (try_symbol("[")) {
+    if (try_eat("[")) {
       // This could be an index_assignment like `[0] = 42` or it could be an
       // expression starting with a type like `[1]int{0}`.
       auto index = parse_expression();
-      symbol("]");
+      eat("]");
       if (try_symbol("=")) {
         return ast::literal_aggregate::index_assignment{std::move(index),
                                                         parse_expression()};
@@ -154,26 +168,26 @@ struct parser : io::reader {
       const auto l = location();
       if (try_symbol(".")) {
         result = {l, ast::dot{std::move(result), parse_identifier()}};
-      } else if (try_symbol("[")) {
+      } else if (try_eat("[")) {
         auto index = parse_expression();
-        symbol("]");
+        eat("]");
         result = {l, ast::index{std::move(result), std::move(index)}};
-      } else if (try_symbol("(")) {
+      } else if (try_eat("(")) {
         std::vector<ast::expression> arguments;
-        if (!try_symbol(")")) {
+        if (!try_eat(")")) {
           while (true) {
             arguments.push_back(parse_expression());
-            if (try_symbol(")")) break;
+            if (try_eat(")")) break;
             symbol(",");
           }
         }
         result = {l, ast::call{std::move(result), std::move(arguments)}};
-      } else if (try_symbol("{")) {
+      } else if (try_eat("{")) {
         std::vector<ast::literal_aggregate::element_type> arguments;
-        if (!try_symbol("}")) {
+        if (!try_eat("}")) {
           while (true) {
             arguments.push_back(parse_aggregate_value());
-            if (try_symbol("}")) break;
+            if (try_eat("}")) break;
             symbol(",");
           }
         }
@@ -329,9 +343,9 @@ struct parser : io::reader {
     skip_whitespace_and_comments();
     const auto l = location();
     auto name = parse_identifier();
-    symbol("(");
+    eat("(");
     std::vector<ast::function_definition::parameter> parameters;
-    if (!try_symbol(")")) {
+    if (!try_eat(")")) {
       while (true) {
         skip_whitespace_and_comments();
         const auto l = location();
@@ -339,7 +353,7 @@ struct parser : io::reader {
         symbol(":");
         auto type = parse_type();
         parameters.push_back({l, std::move(parameter), std::move(type)});
-        if (try_symbol(")")) break;
+        if (try_eat(")")) break;
         symbol(",");
       }
     }
@@ -377,10 +391,10 @@ struct parser : io::reader {
     const auto l = location();
     word();
     skip_whitespace_and_comments();
-    symbol("(");
+    eat("(");
     auto condition = parse_expression();
     skip_whitespace_and_comments();
-    symbol(")");
+    eat(")");
     skip_whitespace_and_comments();
     auto then_branch = parse_statement();
     skip_whitespace_and_comments();
@@ -398,10 +412,10 @@ struct parser : io::reader {
     const auto l = location();
     word();
     skip_whitespace_and_comments();
-    symbol("(");
+    eat("(");
     auto condition = parse_expression();
     skip_whitespace_and_comments();
-    symbol(")");
+    eat(")");
     skip_whitespace_and_comments();
     auto body = parse_statement();
     skip_whitespace_and_comments();
@@ -467,11 +481,11 @@ struct parser : io::reader {
   }
 
   ast::block_statement parse_block() {
-    symbol("{");
+    eat("{");
     std::vector<ast::statement> block;
     while (true) {
       skip_whitespace_and_comments();
-      if (try_symbol("}")) return ast::block_statement{std::move(block)};
+      if (try_eat("}")) return ast::block_statement{std::move(block)};
       block.push_back(parse_statement());
     }
   }

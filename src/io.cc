@@ -125,6 +125,28 @@ export constexpr bool is_upper(char c) { return 'A' <= c && c <= 'Z'; }
 export constexpr bool is_alpha(char c) { return is_lower(c) || is_upper(c); }
 export constexpr bool is_alnum(char c) { return is_digit(c) || is_alpha(c); }
 export constexpr bool is_word(char c) { return c == '_' || is_alnum(c); }
+export constexpr bool is_symbol(char c) {
+  switch (c) {
+    case '!':
+    case '%':
+    case '&':
+    case '*':
+    case '+':
+    case '-':
+    case '.':
+    case '/':
+    case '<':
+    case '=':
+    case '>':
+    case '|':
+    case ';':
+    case ':':
+    case ',':
+      return true;
+    default:
+      return false;
+  }
+}
 
 export constexpr bool is_hex(char c) {
   return ('a' <= c && c <= 'f') ||
@@ -169,19 +191,27 @@ export class reader {
     advance(i - begin);
   }
 
-  std::string_view peek_word() const {
+  template <auto predicate>
+  std::string_view peek_sequence() const {
     const char* const begin = remaining_.data();
     const char* const end = begin + remaining_.size();
     const char* i = begin;
-    while (i != end && is_word(*i)) i++;
+    while (i != end && predicate(*i)) i++;
     return std::string_view(begin, i - begin);
   }
 
-  std::string_view word() {
-    auto result = peek_word();
+  template <auto predicate>
+  std::string_view sequence() {
+    auto result = peek_sequence<predicate>();
     advance(result.size());
     return result;
   }
+
+  std::string_view peek_word() const { return peek_sequence<is_word>(); }
+  std::string_view word() { return sequence<is_word>(); }
+
+  std::string_view peek_symbol() const { return peek_sequence<is_symbol>(); }
+  std::string_view symbol() { return sequence<is_symbol>(); }
 
   // Precondition: peek() == '"'
   std::string parse_string_literal() {
