@@ -788,6 +788,9 @@ constexpr bool is_integral(const semantics::ir::data_type& t) {
   return b && *b == semantics::ir::int32_type;
 }
 
+// TODO: There is a load of duplication for the functions handling different
+// arithmetic operators. Figure out a nice way of removing all the duplication.
+
 expression_checker::info expression_checker::generate(
     io::location location, const ast::negate& n) {
   const auto& l = ensure_loaded(generate(n.inner));
