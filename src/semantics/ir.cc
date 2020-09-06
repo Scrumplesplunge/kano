@@ -221,6 +221,10 @@ struct modulo {
   local left, right;
 };
 
+struct compare_eq {
+  local left, right;
+};
+
 // Given a *T referring to an array of T, produces a *T referring to the nth
 // element of that array.
 struct index {
@@ -229,7 +233,7 @@ struct index {
 };
 
 using action = node<constant, stack_allocate, load, store, call, negate, add,
-                    subtract, multiply, divide, modulo, index>;
+                    subtract, multiply, divide, modulo, compare_eq, index>;
 
 struct step {
   local destination;

@@ -194,6 +194,8 @@ struct expression_checker {
     const local_info* result;
   };
 
+  const semantics::ir::data_type& effective_type(const info&);
+
   const local_info& add(semantics::ir::data_type, semantics::ir::action);
   const local_info& add(semantics::ir::value);
   const local_info& alloc(semantics::ir::data_type);
@@ -222,6 +224,7 @@ struct expression_checker {
   info generate(io::location, const ast::multiply&);
   info generate(io::location, const ast::divide&);
   info generate(io::location, const ast::modulo&);
+  info generate(io::location, const ast::compare_eq&);
   template <typename T>
   info generate(io::location l, const T&) {
     static_assert(!std::is_same_v<T, ast::expression>);
@@ -493,6 +496,19 @@ const environment::name_info& module_checker::resolve(
   // TODO: Implement support for nested types.
   io::fatal_message{name(), e.location(), io::message::error}
       << "unsupported scope expression.";
+}
+
+const semantics::ir::data_type& expression_checker::effective_type(
+    const info& info) {
+  switch (info.category) {
+    case info::rvalue: return info.result->second;
+    case info::lvalue:
+    case info::xvalue: {
+      const auto* p = info.result->second.get<semantics::ir::pointer_type>();
+      assert(p);
+      return p->pointee;
+    }
+  }
 }
 
 const expression_checker::local_info& expression_checker::add(
@@ -860,6 +876,36 @@ expression_checker::info expression_checker::generate(
   const auto& out = add({location, semantics::ir::int32_type},
                         {location, semantics::ir::modulo{l.first, r.first}});
   return {.category = info::rvalue, .result = &out};
+}
+
+expression_checker::info expression_checker::generate(
+    io::location location, const ast::compare_eq& c) {
+  const info l = generate(c.left);
+  const info r = generate(c.right);
+  const auto& ltype = effective_type(l);
+  const auto& rtype = effective_type(r);
+  if (ltype != rtype) {
+    io::fatal_message{module.name(), location, io::message::error}
+        << "type mismatch in comparison: " << ltype << " vs. " << rtype << ".";
+  }
+  if (auto* b = ltype.get<semantics::ir::builtin_type>()) {
+    const auto& l2 = ensure_loaded(l);
+    const auto& r2 = ensure_loaded(r);
+    switch (*b) {
+      case semantics::ir::void_type:
+        // void values are unconditionally equal to each other.
+        return {.category = info::rvalue, .result = &add({location, true})};
+      case semantics::ir::bool_type:
+      case semantics::ir::int32_type:
+        return {.category = info::rvalue,
+                .result = &add(
+                    {location, semantics::ir::bool_type},
+                    {location, semantics::ir::compare_eq{l2.first, r2.first}})};
+    }
+  }
+  // TODO: Implement comparison of other types.
+  io::fatal_message{module.name(), location, io::message::error}
+      << "comparison between objects of type " << ltype << " is unimplemented.";
 }
 
 expression_checker::info expression_checker::generate(
