@@ -65,7 +65,6 @@ struct environment {
 
 struct expression_checker {
   checker& program;
-  module_checker& module;
   const environment& environment;
   semantics::ir::expression result = {};
 
@@ -356,7 +355,7 @@ const environment::name_info& module_checker::check(
   const auto& info =
       environment.define(l, v.id.value, global{type}, program.symbol());
   if (v.initializer) {
-    expression_checker checker{program, *this, environment};
+    expression_checker checker{program, environment};
     const auto& lhs =
         checker.add({l, semantics::ir::pointer{info.symbol, type}});
     checker.generate_into(lhs, *v.initializer);
