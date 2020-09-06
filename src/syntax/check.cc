@@ -36,6 +36,7 @@ struct type_type {
 using name_type = std::variant<semantics::ir::function_type, module_type,
                                global, local, type_type>;
 
+struct checker;
 struct module_checker;
 
 // An environment keeps track of what names are currently in scope, and what
@@ -60,6 +61,7 @@ struct environment {
 };
 
 struct expression_checker {
+  checker& program;
   module_checker& module;
   const environment& environment;
   semantics::ir::expression result = {};
@@ -355,7 +357,7 @@ const environment::name_info& module_checker::check(
   const auto& info =
       environment.define(l, v.id.value, global{type}, program.symbol());
   if (v.initializer) {
-    expression_checker checker{*this, environment};
+    expression_checker checker{program, *this, environment};
     const auto& lhs =
         checker.add({l, semantics::ir::pointer{info.symbol, type}});
     checker.generate_into(lhs, *v.initializer);
@@ -484,7 +486,7 @@ const semantics::ir::data_type& expression_checker::effective_type(
 
 const expression_checker::local_info& expression_checker::add(
     semantics::ir::data_type type, semantics::ir::action action) {
-  const auto id = module.program.local();
+  const auto id = program.local();
   const auto [i, is_new] = result.locals.emplace(id, std::move(type));
   result.steps.emplace_back(semantics::ir::step{id, std::move(action)});
   return *i;
@@ -595,7 +597,7 @@ void expression_checker::construct_into(const local_info& address,
             << "cannot copy-construct expression of type " << source_type
             << " to address expression of type " << destination_type << ".";
       }
-      const auto& type_info = module.program.lookup_type(destination_type);
+      const auto& type_info = program.lookup_type(destination_type);
       if (type_info.copy == semantics::ir::none) {
         io::fatal_message{destination_type.location(), io::message::error}
             << p->pointee << " is not known to be copyable.";
@@ -616,7 +618,7 @@ void expression_checker::construct_into(const local_info& address,
             << "cannot move-construct expression of type " << source_type
             << " to address expression of type " << destination_type << ".";
       }
-      const auto& type_info = module.program.lookup_type(destination_type);
+      const auto& type_info = program.lookup_type(destination_type);
       if (type_info.move == semantics::ir::none) {
         io::fatal_message{destination_type.location(), io::message::error}
             << p->pointee << " is not known to be movable.";
@@ -1160,7 +1162,7 @@ void expression_checker::generate_into(const local_info& address,
 void expression_checker::generate_into(const local_info& address,
                                        io::location location,
                                        const ast::logical_and& a) {
-  const auto end = module.program.symbol();
+  const auto end = program.symbol();
   generate_into(address, a.left);
   const auto& value =
       add({location, semantics::ir::bool_type},
@@ -1173,7 +1175,7 @@ void expression_checker::generate_into(const local_info& address,
 void expression_checker::generate_into(const local_info& address,
                                        io::location location,
                                        const ast::logical_or& o) {
-  const auto end = module.program.symbol();
+  const auto end = program.symbol();
   generate_into(address, o.left);
   conditional_jump(location, load(address), end);
   generate_into(address, o.right);
