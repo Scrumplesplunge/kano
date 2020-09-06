@@ -68,7 +68,7 @@ struct environment {
 struct expression_checker {
   checker& program;
   const environment& environment;
-  ir::expression result = {};
+  ir::function result = {};
 
   using local_info = std::pair<const ir::local, ir::data_type>;
 

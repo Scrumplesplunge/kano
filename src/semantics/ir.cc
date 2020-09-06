@@ -257,7 +257,7 @@ struct step {
   action action;
 };
 
-struct expression {
+struct function {
   // TODO: For supporting efficient move semantics, we need to track the value
   // category for locals as well as their type. Value categories are not types:
   // you can't have an lvalue array of prvalues or a prvalue array of lvalues.
