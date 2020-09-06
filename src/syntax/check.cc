@@ -52,8 +52,7 @@ struct environment {
 
   // Resolve a name within the environment, searching upwards through the
   // lexical scope for its definition.
-  const name_info& lookup(module_checker& program, io::location location,
-                          std::string_view name) const;
+  const name_info& lookup(io::location location, std::string_view name) const;
 
   // Define a name within the current scope.
   const name_info& define(io::location location, std::string name,
@@ -242,12 +241,11 @@ struct module_checker {
   const environment::name_info& resolve(const ast::expression&);
 };
 
-const environment::name_info& environment::lookup(module_checker& module,
-                                                  io::location location,
+const environment::name_info& environment::lookup(io::location location,
                                                   std::string_view name) const {
   auto i = names.find(name);
   if (i != names.end()) return i->second;
-  if (parent) return parent->lookup(module, location, name);
+  if (parent) return parent->lookup(location, name);
   io::fatal_message{location, io::message::error} << "undefined name "
                                                   << std::quoted(name) << ".";
 }
@@ -412,7 +410,7 @@ const environment::name_info& module_checker::check(
 semantics::ir::data_type module_checker::check_type(
     const ast::expression& e) {
   if (const auto* i = e.get<ast::identifier>()) {
-    const auto& info = environment.lookup(*this, e.location(), i->value);
+    const auto& info = environment.lookup(e.location(), i->value);
     if (const auto* type = std::get_if<type_type>(&info.type)) {
       return type->type;
     } else {
@@ -453,14 +451,14 @@ semantics::ir::data_type module_checker::check_type(
 const environment::name_info& module_checker::resolve(
     const ast::expression& e) {
   if (const auto* i = e.get<ast::identifier>()) {
-    return environment.lookup(*this, e.location(), i->value);
+    return environment.lookup(e.location(), i->value);
   }
   if (const auto* d = e.get<ast::dot>()) {
     const auto& lhs = resolve(d->from);
     if (const auto* m = std::get_if<module_type>(&lhs.type)) {
       // TODO: Improve the error message for unknown names here. It might be
       // nice to point the user at the definition for the LHS in this case.
-      return m->exports->lookup(*this, e.location(), d->id.value);
+      return m->exports->lookup(e.location(), d->id.value);
     }
     io::fatal_message{e.location(), io::message::error}
         << "expected module on left hand side of '.'.";
@@ -666,8 +664,7 @@ expression_checker::info expression_checker::generate(
     io::location location, const ast::identifier& i) {
   // In the IR, we will represent variable references as pointers with an lvalue
   // category.
-  return generate(location,
-                  module.environment.lookup(module, location, i.value));
+  return generate(location, module.environment.lookup(location, i.value));
 }
 
 expression_checker::info expression_checker::generate(
@@ -720,10 +717,9 @@ expression_checker::info expression_checker::generate(
   // `foo.bar` may instead mean accessing the name `bar` from the imported
   // module `some.path.foo`.
   if (auto* i = d.from.get<ast::identifier>()) {
-    const auto& lhs = module.environment.lookup(module, location, i->value);
+    const auto& lhs = module.environment.lookup(location, i->value);
     if (const auto* m = std::get_if<module_type>(&lhs.type)) {
-      return generate(location,
-                      m->exports->lookup(module, location, d.id.value));
+      return generate(location, m->exports->lookup(location, d.id.value));
     }
   }
   // TODO: Implement access into objects.
