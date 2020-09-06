@@ -43,7 +43,6 @@ struct module_checker;
 struct environment {
   environment* parent = nullptr;
   struct name_info {
-    std::string file;
     io::location location;
     semantics::ir::symbol symbol;
     std::string name;
@@ -57,11 +56,8 @@ struct environment {
                           std::string_view name) const;
 
   // Define a name within the current scope.
-  const name_info& define(module_checker& program, io::location location,
-                          std::string name, name_type type,
-                          semantics::ir::symbol symbol);
-  const name_info& define(module_checker& program, io::location location,
-                          std::string name, name_type type);
+  const name_info& define(io::location location, std::string name,
+                          name_type type, semantics::ir::symbol symbol);
 };
 
 struct expression_checker {
@@ -183,20 +179,17 @@ struct checker {
       .names =
           {
               {"bool",
-               {"builtin",
-                {},
+               {{},
                 semantics::ir::symbol::builtin_bool,
                 "bool",
                 type_type{{{}, semantics::ir::builtin_type::bool_type}}}},
               {"int32",
-               {"builtin",
-                {},
+               {{},
                 semantics::ir::symbol::builtin_int32,
                 "int32",
                 type_type{{{}, semantics::ir::builtin_type::int32_type}}}},
               {"void",
-               {"builtin",
-                {},
+               {{},
                 semantics::ir::symbol::builtin_void,
                 "void",
                 type_type{{{}, semantics::ir::builtin_type::void_type}}}},
@@ -260,10 +253,10 @@ const environment::name_info& environment::lookup(module_checker& module,
 }
 
 const environment::name_info& environment::define(
-    module_checker& module, io::location l, std::string id, name_type type,
+    io::location l, std::string id, name_type type,
     semantics::ir::symbol symbol) {
-  auto [i, is_new] = names.emplace(
-      id, name_info{module.name(), l, symbol, id, std::move(type)});
+  auto [i, is_new] =
+      names.emplace(id, name_info{l, symbol, id, std::move(type)});
   if (!is_new) {
     io::message{l, io::message::error} << "redeclaration of variable "
                                        << std::quoted(id) << ".";
@@ -271,12 +264,6 @@ const environment::name_info& environment::define(
         << "previously declared here.";
   }
   return i->second;
-}
-
-const environment::name_info& environment::define(
-    module_checker& module, io::location l, std::string id, name_type type) {
-  return define(module, l, std::move(id), std::move(type),
-                module.program.symbol());
 }
 
 semantics::ir::symbol checker::symbol() {
@@ -359,13 +346,15 @@ void module_checker::check(io::location l, const ast::import_statement& i) {
     // to display the cycle.
     io::fatal_message{l, io::message::error} << "cyclic import.";
   }
-  environment.define(*this, l, i.path.back(), module_type{&m.exports});
+  environment.define(l, i.path.back(), module_type{&m.exports},
+                     program.symbol());
 }
 
 const environment::name_info& module_checker::check(
     io::location l, const ast::variable_definition& v) {
   const auto type = check_type(v.type);
-  const auto& info = environment.define(*this, l, v.id.value, global{type});
+  const auto& info =
+      environment.define(l, v.id.value, global{type}, program.symbol());
   if (v.initializer) {
     expression_checker checker{*this};
     const auto& lhs =
@@ -378,8 +367,8 @@ const environment::name_info& module_checker::check(
 
 const environment::name_info& module_checker::check(io::location l,
                                             const ast::alias_definition& a) {
-  return environment.define(*this, l, a.id.value,
-                            type_type{check_type(a.type)});
+  return environment.define(l, a.id.value, type_type{check_type(a.type)},
+                            program.symbol());
 }
 
 const environment::name_info& module_checker::check(
@@ -391,9 +380,10 @@ const environment::name_info& module_checker::check(
     parameters.push_back(check_type(parameter.type));
   }
   // TODO: Check the function body.
-  return environment.define(*this, l, f.id.value,
-                            semantics::ir::function_type{
-                                std::move(return_type), std::move(parameters)});
+  return environment.define(l, f.id.value,
+                            semantics::ir::function_type{std::move(return_type),
+                                                         std::move(parameters)},
+                            program.symbol());
 }
 
 const environment::name_info& module_checker::check(
@@ -402,8 +392,8 @@ const environment::name_info& module_checker::check(
   // top-level declarations have been handled.
   const auto symbol = program.symbol();
   return environment.define(
-      *this, l, c.id.value,
-      type_type{{l, semantics::ir::user_defined_type{symbol}}}, symbol);
+      l, c.id.value, type_type{{l, semantics::ir::user_defined_type{symbol}}},
+      symbol);
 }
 
 const environment::name_info& module_checker::check(const ast::definition& e) {
