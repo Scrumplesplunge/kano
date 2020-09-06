@@ -1,5 +1,9 @@
 import foo.bar;  # Import something from foo/bar.kano
 
+var demoint : int32 = 42;
+var demobool : bool = 1 == 2 && 3 != 4 || !(5 == 6);
+var n : int32 = 1 % -4 + 2 * 3;
+
 # Arrays.
 var a : [3]int32 = [3]int32{1, 2, 3};
 var a_copy : [3]int32 = a;

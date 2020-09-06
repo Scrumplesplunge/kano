@@ -231,6 +231,15 @@ struct compare_ge {
   local left, right;
 };
 
+struct conditional_jump {
+  local condition;
+  symbol target;
+};
+
+struct logical_not {
+  local inner;
+};
+
 // Given a *T referring to an array of T, produces a *T referring to the nth
 // element of that array.
 struct index {
@@ -240,7 +249,8 @@ struct index {
 
 using action = node<constant, stack_allocate, load, store, call, negate, add,
                     subtract, multiply, divide, modulo, compare_eq, compare_ne,
-                    compare_lt, compare_le, compare_gt, compare_ge, index>;
+                    compare_lt, compare_le, compare_gt, compare_ge,
+                    conditional_jump, logical_not, index>;
 
 struct step {
   local destination;
@@ -252,6 +262,7 @@ struct expression {
   // category for locals as well as their type. Value categories are not types:
   // you can't have an lvalue array of prvalues or a prvalue array of lvalues.
   std::map<local, data_type> locals;
+  std::map<symbol, std::vector<step>::size_type> labels;
   std::vector<step> steps;
 };
 

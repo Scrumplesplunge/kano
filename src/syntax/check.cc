@@ -208,6 +208,8 @@ struct expression_checker {
   const local_info& index(io::location, const local_info&, const local_info&);
   const local_info& ensure_loaded(const info&);
   const local_info& load(const local_info&);
+  void label(semantics::ir::symbol);
+  void conditional_jump(io::location, const local_info&, semantics::ir::symbol);
   void construct_into(const local_info&, const info&);
 
   info generate(io::location, const environment::name_info&);
@@ -234,6 +236,9 @@ struct expression_checker {
   info generate(io::location, const ast::compare_le&);
   info generate(io::location, const ast::compare_gt&);
   info generate(io::location, const ast::compare_ge&);
+  info generate(io::location, const ast::logical_and&);
+  info generate(io::location, const ast::logical_or&);
+  info generate(io::location, const ast::logical_not&);
   template <typename T>
   info generate(io::location l, const T&) {
     static_assert(!std::is_same_v<T, ast::expression>);
@@ -249,6 +254,8 @@ struct expression_checker {
                      const semantics::ir::array_type&);
   void generate_into(const local_info&, io::location,
                      const ast::literal_aggregate&);
+  void generate_into(const local_info&, io::location, const ast::logical_and&);
+  void generate_into(const local_info&, io::location, const ast::logical_or&);
   template <typename T>
   void generate_into(const local_info& address, io::location l, const T& x) {
     construct_into(address, generate(l, x));
@@ -585,6 +592,24 @@ const expression_checker::local_info& expression_checker::load(
     io::fatal_message{module.name(), type.location(), io::message::error}
         << "cannot load from expression of type " << type << ".";
   }
+}
+
+void expression_checker::label(semantics::ir::symbol s) {
+  auto [i, is_new] = result.labels.emplace(s, result.steps.size());
+  assert(is_new);
+}
+
+constexpr bool is_bool(const semantics::ir::data_type& t) {
+  const auto* b = t.get<semantics::ir::builtin_type>();
+  return b && *b == semantics::ir::bool_type;
+}
+
+void expression_checker::conditional_jump(io::location location,
+                                          const local_info& condition,
+                                          semantics::ir::symbol target) {
+  assert(is_bool(condition.second));
+  add({location, semantics::ir::void_type},
+      {location, semantics::ir::conditional_jump{condition.first, target}});
 }
 
 void expression_checker::construct_into(const local_info& address,
@@ -1071,6 +1096,34 @@ expression_checker::info expression_checker::generate(
 }
 
 expression_checker::info expression_checker::generate(
+    io::location location, const ast::logical_and& a) {
+  const auto& mem = alloc({location, semantics::ir::bool_type});
+  generate_into(mem, location, a);
+  return {.category = info::lvalue, .result = &mem};
+}
+
+expression_checker::info expression_checker::generate(
+    io::location location, const ast::logical_or& o) {
+  const auto& mem = alloc({location, semantics::ir::bool_type});
+  generate_into(mem, location, o);
+  return {.category = info::xvalue, .result = &mem};
+}
+
+expression_checker::info expression_checker::generate(
+    io::location location, const ast::logical_not& n) {
+  const auto inner = generate(n.inner);
+  if (!is_bool(inner.result->second)) {
+    io::fatal_message{module.name(), location, io::message::error}
+        << "cannot logically negate expression of type " << inner.result->second
+        << ".";
+  }
+  const auto& result =
+      add({location, semantics::ir::bool_type},
+          {location, semantics::ir::logical_not{inner.result->first}});
+  return {.category = info::rvalue, .result = &result};
+}
+
+expression_checker::info expression_checker::generate(
     const ast::expression& e) {
   return e.visit([&](const auto& x) { return generate(e.location(), x); });
 }
@@ -1142,6 +1195,29 @@ void expression_checker::generate_into(const local_info& address,
   }
   io::fatal_message{module.name(), location, io::message::error}
       << "unimplemented aggregate literal type.";
+}
+
+void expression_checker::generate_into(const local_info& address,
+                                       io::location location,
+                                       const ast::logical_and& a) {
+  const auto end = module.program.symbol();
+  generate_into(address, a.left);
+  const auto& value =
+      add({location, semantics::ir::bool_type},
+          {location, semantics::ir::logical_not{load(address).first}});
+  conditional_jump(location, value, end);
+  generate_into(address, a.right);
+  label(end);
+}
+
+void expression_checker::generate_into(const local_info& address,
+                                       io::location location,
+                                       const ast::logical_or& o) {
+  const auto end = module.program.symbol();
+  generate_into(address, o.left);
+  conditional_jump(location, load(address), end);
+  generate_into(address, o.right);
+  label(end);
 }
 
 void expression_checker::generate_into(const local_info& address,
