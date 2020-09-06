@@ -13,6 +13,8 @@ import <filesystem>;
 
 namespace syntax {
 
+namespace ir = ::semantics::ir;
+
 struct environment;
 
 struct module_type {
@@ -20,21 +22,21 @@ struct module_type {
 };
 
 struct global {
-  semantics::ir::data_type type;
+  ir::data_type type;
 };
 
 struct local {
-  semantics::ir::data_type type;
+  ir::data_type type;
 };
 
 // Used for names which represent types instead of names which represent values
 // of a given type.
 struct type_type {
-  semantics::ir::data_type type;
+  ir::data_type type;
 };
 
-using name_type = std::variant<semantics::ir::function_type, module_type,
-                               global, local, type_type>;
+using name_type =
+    std::variant<ir::function_type, module_type, global, local, type_type>;
 
 struct checker;
 struct module_checker;
@@ -45,7 +47,7 @@ struct environment {
   environment* parent = nullptr;
   struct name_info {
     io::location location;
-    semantics::ir::symbol symbol;
+    ir::symbol symbol;
     std::string name;
     name_type type;
   };
@@ -57,19 +59,18 @@ struct environment {
 
   // Define a name within the current scope.
   const name_info& define(io::location location, std::string name,
-                          name_type type, semantics::ir::symbol symbol);
+                          name_type type, ir::symbol symbol);
 
-  semantics::ir::data_type check_type(const ast::expression&) const;
+  ir::data_type check_type(const ast::expression&) const;
   const environment::name_info& resolve(const ast::expression&) const;
 };
 
 struct expression_checker {
   checker& program;
   const environment& environment;
-  semantics::ir::expression result = {};
+  ir::expression result = {};
 
-  using local_info =
-      std::pair<const semantics::ir::local, semantics::ir::data_type>;
+  using local_info = std::pair<const ir::local, ir::data_type>;
 
   struct info {
     // Every value has a category which describes how that value can be used.
@@ -93,18 +94,18 @@ struct expression_checker {
     const local_info* result;
   };
 
-  const semantics::ir::data_type& effective_type(const info&);
+  const ir::data_type& effective_type(const info&);
 
-  const local_info& add(semantics::ir::data_type, semantics::ir::action);
-  const local_info& add(semantics::ir::value);
-  const local_info& alloc(semantics::ir::data_type);
+  const local_info& add(ir::data_type, ir::action);
+  const local_info& add(ir::value);
+  const local_info& alloc(ir::data_type);
   // Given a pointer to an indexable object (i.e. [n]T) and an index i, produce
   // a pointer to the ith element of the object.
   const local_info& index(io::location, const local_info&, const local_info&);
   const local_info& ensure_loaded(const info&);
   const local_info& load(const local_info&);
-  void label(semantics::ir::symbol);
-  void conditional_jump(io::location, const local_info&, semantics::ir::symbol);
+  void label(ir::symbol);
+  void conditional_jump(io::location, const local_info&, ir::symbol);
   void construct_into(const local_info&, const info&);
 
   info generate(io::location, const environment::name_info&);
@@ -112,7 +113,7 @@ struct expression_checker {
   info generate(io::location, const ast::literal_integer&);
   info generate(io::location, const ast::literal_string&);
   info generate(io::location, const ast::literal_aggregate&,
-                const semantics::ir::array_type&);
+                const ir::array_type&);
   info generate(io::location, const ast::literal_aggregate&);
   info generate(io::location, const ast::array_type&);
   info generate(io::location, const ast::dot&);
@@ -140,8 +141,7 @@ struct expression_checker {
   // Like generate, but instead of generating the value into a local, generate
   // and store the value at the given address.
   void generate_into(const local_info&, io::location,
-                     const ast::literal_aggregate&,
-                     const semantics::ir::array_type&);
+                     const ast::literal_aggregate&, const ir::array_type&);
   void generate_into(const local_info&, io::location,
                      const ast::literal_aggregate&);
   void generate_into(const local_info&, io::location, const ast::logical_and&);
@@ -161,56 +161,50 @@ struct module_data {
 
 struct type_info {
   // function copy(destination : *T, source : *T) : void { ... }
-  semantics::ir::symbol copy;
+  ir::symbol copy;
   // function move(destination : *T, source : *T) : void { ... }
-  semantics::ir::symbol move;
+  ir::symbol move;
   // function equal(l : *T, r : *T) : bool { ... }
-  semantics::ir::symbol equal;
+  ir::symbol equal;
   // function compare(l : *T, r : *T) : int32 { ... }
-  semantics::ir::symbol compare;
+  ir::symbol compare;
 };
 
 struct checker {
-  semantics::ir::symbol next_symbol = semantics::ir::symbol::first_user_symbol;
-  semantics::ir::local next_local = {};
+  ir::symbol next_symbol = ir::symbol::first_user_symbol;
+  ir::local next_local = {};
   std::map<std::filesystem::path, module_data> modules;
   // Map from structural type to its symbolic name. This is used for looking up
   // operators for moving values of this type around.
-  std::map<semantics::ir::data_type, semantics::ir::symbol> type_by_structure;
+  std::map<ir::data_type, ir::symbol> type_by_structure;
   // Map from symbolic type names to the table of operators for the type.
-  std::map<semantics::ir::symbol, type_info> types = {};
+  std::map<ir::symbol, type_info> types = {};
   environment builtins = {
       .names =
           {
               {"bool",
-               {{},
-                semantics::ir::symbol::builtin_bool,
-                "bool",
-                type_type{{{}, semantics::ir::builtin_type::bool_type}}}},
+               {{}, ir::builtin_bool, "bool", type_type{{{}, ir::bool_type}}}},
               {"int32",
                {{},
-                semantics::ir::symbol::builtin_int32,
+                ir::builtin_int32,
                 "int32",
-                type_type{{{}, semantics::ir::builtin_type::int32_type}}}},
+                type_type{{{}, ir::int32_type}}}},
               {"void",
-               {{},
-                semantics::ir::symbol::builtin_void,
-                "void",
-                type_type{{{}, semantics::ir::builtin_type::void_type}}}},
+               {{}, ir::builtin_void, "void", type_type{{{}, ir::void_type}}}},
           },
   };
 
   // Generate a new unique symbol for some exported artefact.
-  semantics::ir::symbol symbol();
+  ir::symbol symbol();
 
   // Generate a new unique id for some local variable.
-  semantics::ir::local local();
+  ir::local local();
 
   // Fetches data about a module. If the module is not yet processed, open the
   // file and process it. If it is already processed, return the existing data.
   const module_data& get_module(const std::filesystem::path& path);
 
-  const type_info& lookup_type(const semantics::ir::data_type&);
+  const type_info& lookup_type(const ir::data_type&);
 };
 
 struct module_checker {
@@ -252,9 +246,10 @@ const environment::name_info& environment::lookup(io::location location,
                                                   << std::quoted(name) << ".";
 }
 
-const environment::name_info& environment::define(
-    io::location l, std::string id, name_type type,
-    semantics::ir::symbol symbol) {
+const environment::name_info& environment::define(io::location l,
+                                                  std::string id,
+                                                  name_type type,
+                                                  ir::symbol symbol) {
   auto [i, is_new] =
       names.emplace(id, name_info{l, symbol, id, std::move(type)});
   if (!is_new) {
@@ -266,15 +261,15 @@ const environment::name_info& environment::define(
   return i->second;
 }
 
-semantics::ir::symbol checker::symbol() {
+ir::symbol checker::symbol() {
   const auto result = next_symbol;
-  next_symbol = semantics::ir::symbol((int)next_symbol + 1);
+  next_symbol = ir::symbol((int)next_symbol + 1);
   return result;
 }
 
-semantics::ir::local checker::local() {
+ir::local checker::local() {
   const auto result = next_local;
-  next_local = semantics::ir::local((int)next_local + 1);
+  next_local = ir::local((int)next_local + 1);
   return result;
 }
 
@@ -287,9 +282,9 @@ const module_data& checker::get_module(const std::filesystem::path& path) {
   return i->second;
 }
 
-const type_info& checker::lookup_type(const semantics::ir::data_type& d) {
+const type_info& checker::lookup_type(const ir::data_type& d) {
   const auto [i, is_new] =
-      type_by_structure.emplace(d, semantics::ir::symbol::none);
+      type_by_structure.emplace(d, ir::symbol::none);
   if (!is_new) return types.at(i->second);
   i->second = symbol();
   // TODO: Generate definitions for copy and move in terms of sub-types. These
@@ -356,8 +351,7 @@ const environment::name_info& module_checker::check(
   const auto& info =
       environment.define(l, v.id.value, global{type}, program.symbol());
   if (v.initializer) {
-    const auto& lhs =
-        initialization.add({l, semantics::ir::pointer{info.symbol, type}});
+    const auto& lhs = initialization.add({l, ir::pointer{info.symbol, type}});
     initialization.generate_into(lhs, *v.initializer);
   }
   return info;
@@ -373,16 +367,16 @@ const environment::name_info& module_checker::check(io::location l,
 const environment::name_info& module_checker::check(
     io::location l, const ast::function_definition& f) {
   auto return_type = environment.check_type(f.return_type);
-  std::vector<semantics::ir::data_type> parameters;
+  std::vector<ir::data_type> parameters;
   for (const auto& parameter : f.parameters) {
     // TODO: Check that parameter names are not duplicated.
     parameters.push_back(environment.check_type(parameter.type));
   }
   // TODO: Check the function body.
-  return environment.define(l, f.id.value,
-                            semantics::ir::function_type{std::move(return_type),
-                                                         std::move(parameters)},
-                            program.symbol());
+  return environment.define(
+      l, f.id.value,
+      ir::function_type{std::move(return_type), std::move(parameters)},
+      program.symbol());
 }
 
 const environment::name_info& module_checker::check(
@@ -391,8 +385,7 @@ const environment::name_info& module_checker::check(
   // top-level declarations have been handled.
   const auto symbol = program.symbol();
   return environment.define(
-      l, c.id.value, type_type{{l, semantics::ir::user_defined_type{symbol}}},
-      symbol);
+      l, c.id.value, type_type{{l, ir::user_defined_type{symbol}}}, symbol);
 }
 
 const environment::name_info& module_checker::check(const ast::definition& e) {
@@ -428,8 +421,7 @@ const environment::name_info& environment::resolve(
       << "unsupported scope expression.";
 }
 
-semantics::ir::data_type environment::check_type(
-    const ast::expression& e) const {
+ir::data_type environment::check_type(const ast::expression& e) const {
   if (const auto* i = e.get<ast::identifier>()) {
     const auto& info = lookup(e.location(), i->value);
     if (const auto* type = std::get_if<type_type>(&info.type)) {
@@ -448,13 +440,12 @@ semantics::ir::data_type environment::check_type(
           << "support for nontrivial size expressions is unimplemented.";
     }
     auto element = check_type(a->element);
-    return {e.location(),
-            semantics::ir::array_type{i->value, std::move(element)}};
+    return {e.location(), ir::array_type{i->value, std::move(element)}};
   }
   if (const auto* d = e.get<ast::dereference>()) {
     // TODO: Add support for function pointer types once they have syntax.
     auto pointee = check_type(d->from);
-    return {e.location(), semantics::ir::pointer_type{std::move(pointee)}};
+    return {e.location(), ir::pointer_type{std::move(pointee)}};
   }
   if (const auto* d = e.get<ast::dot>()) {
     const auto& m = resolve(e);
@@ -469,13 +460,12 @@ semantics::ir::data_type environment::check_type(
       << "unsupported type expression.";
 }
 
-const semantics::ir::data_type& expression_checker::effective_type(
-    const info& info) {
+const ir::data_type& expression_checker::effective_type(const info& info) {
   switch (info.category) {
     case info::rvalue: return info.result->second;
     case info::lvalue:
     case info::xvalue: {
-      const auto* p = info.result->second.get<semantics::ir::pointer_type>();
+      const auto* p = info.result->second.get<ir::pointer_type>();
       assert(p);
       return p->pointee;
     }
@@ -483,47 +473,44 @@ const semantics::ir::data_type& expression_checker::effective_type(
 }
 
 const expression_checker::local_info& expression_checker::add(
-    semantics::ir::data_type type, semantics::ir::action action) {
+    ir::data_type type, ir::action action) {
   const auto id = program.local();
   const auto [i, is_new] = result.locals.emplace(id, std::move(type));
-  result.steps.emplace_back(semantics::ir::step{id, std::move(action)});
+  result.steps.emplace_back(ir::step{id, std::move(action)});
   return *i;
 }
 
-const expression_checker::local_info& expression_checker::add(
-    semantics::ir::value value) {
+const expression_checker::local_info& expression_checker::add(ir::value value) {
   const auto location = value.location();
   auto type = type_of(value);
-  return add(std::move(type),
-             {location, semantics::ir::constant{std::move(value)}});
+  return add(std::move(type), {location, ir::constant{std::move(value)}});
 }
 
 const expression_checker::local_info& expression_checker::alloc(
-    semantics::ir::data_type type) {
-  return add(type, {type.location(), semantics::ir::stack_allocate{}});
+    ir::data_type type) {
+  return add(type, {type.location(), ir::stack_allocate{}});
 }
 
 const expression_checker::local_info& expression_checker::index(
     io::location location, const local_info& address,
     const local_info& offset) {
-  if (offset.second !=
-      semantics::ir::data_type{{}, semantics::ir::builtin_type::int32_type}) {
+  if (offset.second != ir::data_type{{}, ir::builtin_type::int32_type}) {
     io::fatal_message{location, io::message::error}
         << "index offset must be integral.";
   }
   // TODO: Make index() support **T as well.
-  auto* p = address.second.get<semantics::ir::pointer_type>();
+  auto* p = address.second.get<ir::pointer_type>();
   if (!p) {
     io::fatal_message{location, io::message::error}
         << "index address must be *[n]T, but got " << address.second << ".";
   }
-  auto* a = p->pointee.get<semantics::ir::array_type>();
+  auto* a = p->pointee.get<ir::array_type>();
   if (!a) {
     io::fatal_message{location, io::message::error}
         << "index address must be *[n]T, but got " << address.second << ".";
   }
-  return add({location, semantics::ir::pointer_type{a->element}},
-             {location, semantics::ir::index{address.first, offset.first}});
+  return add({location, ir::pointer_type{a->element}},
+             {location, ir::index{address.first, offset.first}});
 }
 
 const expression_checker::local_info& expression_checker::ensure_loaded(
@@ -533,7 +520,7 @@ const expression_checker::local_info& expression_checker::ensure_loaded(
       return *x.result;
     case info::lvalue:
     case info::xvalue:
-      assert(x.result->second.is<semantics::ir::pointer_type>());
+      assert(x.result->second.is<ir::pointer_type>());
       return load(*x.result);
   }
 }
@@ -541,36 +528,36 @@ const expression_checker::local_info& expression_checker::ensure_loaded(
 const expression_checker::local_info& expression_checker::load(
     const local_info& address) {
   const auto& [a, type] = address;
-  if (auto* p = type.get<semantics::ir::pointer_type>()) {
-    return add(p->pointee, {type.location(), semantics::ir::load{a}});
+  if (auto* p = type.get<ir::pointer_type>()) {
+    return add(p->pointee, {type.location(), ir::load{a}});
   } else {
     io::fatal_message{type.location(), io::message::error}
         << "cannot load from expression of type " << type << ".";
   }
 }
 
-void expression_checker::label(semantics::ir::symbol s) {
+void expression_checker::label(ir::symbol s) {
   auto [i, is_new] = result.labels.emplace(s, result.steps.size());
   assert(is_new);
 }
 
-constexpr bool is_bool(const semantics::ir::data_type& t) {
-  const auto* b = t.get<semantics::ir::builtin_type>();
-  return b && *b == semantics::ir::bool_type;
+constexpr bool is_bool(const ir::data_type& t) {
+  const auto* b = t.get<ir::builtin_type>();
+  return b && *b == ir::bool_type;
 }
 
 void expression_checker::conditional_jump(io::location location,
                                           const local_info& condition,
-                                          semantics::ir::symbol target) {
+                                          ir::symbol target) {
   assert(is_bool(condition.second));
-  add({location, semantics::ir::void_type},
-      {location, semantics::ir::conditional_jump{condition.first, target}});
+  add({location, ir::void_type},
+      {location, ir::conditional_jump{condition.first, target}});
 }
 
 void expression_checker::construct_into(const local_info& address,
                                         const info& value) {
   const auto& [destination, destination_type] = address;
-  auto* const p = destination_type.get<semantics::ir::pointer_type>();
+  auto* const p = destination_type.get<ir::pointer_type>();
   if (!p) {
     io::fatal_message{destination_type.location(), io::message::error}
         << "cannot store to address expression of type " << destination_type
@@ -585,8 +572,7 @@ void expression_checker::construct_into(const local_info& address,
             << "cannot store expression of type " << source_type
             << " to address expression of type " << destination_type << ".";
       }
-      add(p->pointee,
-          {source_type.location(), semantics::ir::store{destination, source}});
+      add(p->pointee, {source_type.location(), ir::store{destination, source}});
       break;
     }
     case info::lvalue: {
@@ -596,18 +582,17 @@ void expression_checker::construct_into(const local_info& address,
             << " to address expression of type " << destination_type << ".";
       }
       const auto& type_info = program.lookup_type(destination_type);
-      if (type_info.copy == semantics::ir::none) {
+      if (type_info.copy == ir::none) {
         io::fatal_message{destination_type.location(), io::message::error}
             << p->pointee << " is not known to be copyable.";
       }
-      semantics::ir::function_type copy_type{
+      ir::function_type copy_type{
           .return_type = {destination_type.location(),
-                          semantics::ir::builtin_type::void_type},
+                          ir::builtin_type::void_type},
           .parameters = {destination_type, source_type},
       };
       add({destination_type.location(),
-           semantics::ir::function_pointer{type_info.copy,
-                                           std::move(copy_type)}});
+           ir::function_pointer{type_info.copy, std::move(copy_type)}});
       break;
     }
     case info::xvalue: {
@@ -617,18 +602,17 @@ void expression_checker::construct_into(const local_info& address,
             << " to address expression of type " << destination_type << ".";
       }
       const auto& type_info = program.lookup_type(destination_type);
-      if (type_info.move == semantics::ir::none) {
+      if (type_info.move == ir::none) {
         io::fatal_message{destination_type.location(), io::message::error}
             << p->pointee << " is not known to be movable.";
       }
-      semantics::ir::function_type move_type{
+      ir::function_type move_type{
           .return_type = {destination_type.location(),
-                          semantics::ir::builtin_type::void_type},
+                          ir::builtin_type::void_type},
           .parameters = {destination_type, source_type},
       };
       add({destination_type.location(),
-           semantics::ir::function_pointer{type_info.move,
-                                           std::move(move_type)}});
+           ir::function_pointer{type_info.move, std::move(move_type)}});
       break;
     }
   }
@@ -636,14 +620,13 @@ void expression_checker::construct_into(const local_info& address,
 
 expression_checker::info expression_checker::generate(
     io::location location, const environment::name_info& info) {
-  if (const auto* f = std::get_if<semantics::ir::function_type>(&info.type)) {
+  if (const auto* f = std::get_if<ir::function_type>(&info.type)) {
     const auto& result =
-        add({location, semantics::ir::function_pointer{info.symbol, *f}});
+        add({location, ir::function_pointer{info.symbol, *f}});
     return {.category = info::lvalue, .result = &result};
   }
   if (const auto* g = std::get_if<global>(&info.type)) {
-    const auto& result =
-        add({location, semantics::ir::pointer{info.symbol, g->type}});
+    const auto& result = add({location, ir::pointer{info.symbol, g->type}});
     return {.category = info::lvalue, .result = &result};
   }
   if (const auto* l = std::get_if<local>(&info.type)) {
@@ -687,7 +670,7 @@ expression_checker::info expression_checker::generate(
 
 expression_checker::info expression_checker::generate(
     io::location location, const ast::literal_aggregate& a,
-    const semantics::ir::array_type& array) {
+    const ir::array_type& array) {
   const auto& mem = alloc({location, array});
   generate_into(mem, location, a, array);
   return {.category = info::xvalue, .result = &mem};
@@ -696,7 +679,7 @@ expression_checker::info expression_checker::generate(
 expression_checker::info expression_checker::generate(
     io::location location, const ast::literal_aggregate& a) {
   const auto type = environment.check_type(a.type);
-  if (const auto* array = type.get<semantics::ir::array_type>()) {
+  if (const auto* array = type.get<ir::array_type>()) {
     return generate(location, a, *array);
   }
   // TODO: Implement object literals.
@@ -731,7 +714,7 @@ expression_checker::info expression_checker::generate(
 expression_checker::info expression_checker::generate(
     io::location location, const ast::dereference& d) {
   auto inner = generate(d.from);
-  if (auto* p = inner.result->second.get<semantics::ir::pointer_type>()) {
+  if (auto* p = inner.result->second.get<ir::pointer_type>()) {
     return {.category = info::lvalue, .result = inner.result};
   } else {
     io::fatal_message{location, io::message::error}
@@ -757,9 +740,9 @@ expression_checker::info expression_checker::generate(io::location location,
   return {.category = info::lvalue, .result = &result};
 }
 
-constexpr bool is_integral(const semantics::ir::data_type& t) {
-  const auto* b = t.get<semantics::ir::builtin_type>();
-  return b && *b == semantics::ir::int32_type;
+constexpr bool is_integral(const ir::data_type& t) {
+  const auto* b = t.get<ir::builtin_type>();
+  return b && *b == ir::int32_type;
 }
 
 // TODO: There is a load of duplication for the functions handling different
@@ -772,8 +755,8 @@ expression_checker::info expression_checker::generate(
     io::fatal_message{location, io::message::error}
         << "can't negate expression of type " << l.second << '.';
   }
-  const auto& out = add({location, semantics::ir::int32_type},
-                        {location, semantics::ir::negate{l.first}});
+  const auto& out =
+      add({location, ir::int32_type}, {location, ir::negate{l.first}});
   return {.category = info::rvalue, .result = &out};
 }
 
@@ -790,8 +773,8 @@ expression_checker::info expression_checker::generate(
     io::fatal_message{a.right.location(), io::message::error}
         << "can't add expression of type " << r.second << '.';
   }
-  const auto& out = add({location, semantics::ir::int32_type},
-                        {location, semantics::ir::add{l.first, r.first}});
+  const auto& out =
+      add({location, ir::int32_type}, {location, ir::add{l.first, r.first}});
   return {.category = info::rvalue, .result = &out};
 }
 
@@ -808,8 +791,8 @@ expression_checker::info expression_checker::generate(
     io::fatal_message{s.right.location(), io::message::error}
         << "can't add expression of type " << r.second << '.';
   }
-  const auto& out = add({location, semantics::ir::int32_type},
-                        {location, semantics::ir::subtract{l.first, r.first}});
+  const auto& out = add({location, ir::int32_type},
+                        {location, ir::subtract{l.first, r.first}});
   return {.category = info::rvalue, .result = &out};
 }
 
@@ -825,8 +808,8 @@ expression_checker::info expression_checker::generate(
     io::fatal_message{m.right.location(), io::message::error}
         << "can't add expression of type " << r.second << '.';
   }
-  const auto& out = add({location, semantics::ir::int32_type},
-                        {location, semantics::ir::multiply{l.first, r.first}});
+  const auto& out = add({location, ir::int32_type},
+                        {location, ir::multiply{l.first, r.first}});
   return {.category = info::rvalue, .result = &out};
 }
 
@@ -842,8 +825,8 @@ expression_checker::info expression_checker::generate(
     io::fatal_message{d.right.location(), io::message::error}
         << "can't add expression of type " << r.second << '.';
   }
-  const auto& out = add({location, semantics::ir::int32_type},
-                        {location, semantics::ir::divide{l.first, r.first}});
+  const auto& out =
+      add({location, ir::int32_type}, {location, ir::divide{l.first, r.first}});
   return {.category = info::rvalue, .result = &out};
 }
 
@@ -859,8 +842,8 @@ expression_checker::info expression_checker::generate(
     io::fatal_message{m.right.location(), io::message::error}
         << "can't add expression of type " << r.second << '.';
   }
-  const auto& out = add({location, semantics::ir::int32_type},
-                        {location, semantics::ir::modulo{l.first, r.first}});
+  const auto& out =
+      add({location, ir::int32_type}, {location, ir::modulo{l.first, r.first}});
   return {.category = info::rvalue, .result = &out};
 }
 
@@ -874,19 +857,18 @@ expression_checker::info expression_checker::generate(
     io::fatal_message{location, io::message::error}
         << "type mismatch in comparison: " << ltype << " vs. " << rtype << ".";
   }
-  if (auto* b = ltype.get<semantics::ir::builtin_type>()) {
+  if (auto* b = ltype.get<ir::builtin_type>()) {
     const auto& l2 = ensure_loaded(l);
     const auto& r2 = ensure_loaded(r);
     switch (*b) {
-      case semantics::ir::void_type:
+      case ir::void_type:
         // void values are unconditionally equal to each other.
         return {.category = info::rvalue, .result = &add({location, true})};
-      case semantics::ir::bool_type:
-      case semantics::ir::int32_type:
+      case ir::bool_type:
+      case ir::int32_type:
         return {.category = info::rvalue,
-                .result = &add(
-                    {location, semantics::ir::bool_type},
-                    {location, semantics::ir::compare_eq{l2.first, r2.first}})};
+                .result = &add({location, ir::bool_type},
+                               {location, ir::compare_eq{l2.first, r2.first}})};
     }
   }
   // TODO: Implement comparison of other types.
@@ -904,19 +886,18 @@ expression_checker::info expression_checker::generate(
     io::fatal_message{location, io::message::error}
         << "type mismatch in comparison: " << ltype << " vs. " << rtype << ".";
   }
-  if (auto* b = ltype.get<semantics::ir::builtin_type>()) {
+  if (auto* b = ltype.get<ir::builtin_type>()) {
     const auto& l2 = ensure_loaded(l);
     const auto& r2 = ensure_loaded(r);
     switch (*b) {
-      case semantics::ir::void_type:
+      case ir::void_type:
         // void values are unconditionally equal to each other.
         return {.category = info::rvalue, .result = &add({location, true})};
-      case semantics::ir::bool_type:
-      case semantics::ir::int32_type:
+      case ir::bool_type:
+      case ir::int32_type:
         return {.category = info::rvalue,
-                .result = &add(
-                    {location, semantics::ir::bool_type},
-                    {location, semantics::ir::compare_ne{l2.first, r2.first}})};
+                .result = &add({location, ir::bool_type},
+                               {location, ir::compare_ne{l2.first, r2.first}})};
     }
   }
   // TODO: Implement comparison of other types.
@@ -934,19 +915,18 @@ expression_checker::info expression_checker::generate(
     io::fatal_message{location, io::message::error}
         << "type mismatch in comparison: " << ltype << " vs. " << rtype << ".";
   }
-  if (auto* b = ltype.get<semantics::ir::builtin_type>()) {
+  if (auto* b = ltype.get<ir::builtin_type>()) {
     const auto& l2 = ensure_loaded(l);
     const auto& r2 = ensure_loaded(r);
     switch (*b) {
-      case semantics::ir::void_type:
+      case ir::void_type:
         // void values are unconditionally equal to each other.
         return {.category = info::rvalue, .result = &add({location, true})};
-      case semantics::ir::bool_type:
-      case semantics::ir::int32_type:
+      case ir::bool_type:
+      case ir::int32_type:
         return {.category = info::rvalue,
-                .result = &add(
-                    {location, semantics::ir::bool_type},
-                    {location, semantics::ir::compare_lt{l2.first, r2.first}})};
+                .result = &add({location, ir::bool_type},
+                               {location, ir::compare_lt{l2.first, r2.first}})};
     }
   }
   // TODO: Implement comparison of other types.
@@ -964,19 +944,18 @@ expression_checker::info expression_checker::generate(
     io::fatal_message{location, io::message::error}
         << "type mismatch in comparison: " << ltype << " vs. " << rtype << ".";
   }
-  if (auto* b = ltype.get<semantics::ir::builtin_type>()) {
+  if (auto* b = ltype.get<ir::builtin_type>()) {
     const auto& l2 = ensure_loaded(l);
     const auto& r2 = ensure_loaded(r);
     switch (*b) {
-      case semantics::ir::void_type:
+      case ir::void_type:
         // void values are unconditionally equal to each other.
         return {.category = info::rvalue, .result = &add({location, true})};
-      case semantics::ir::bool_type:
-      case semantics::ir::int32_type:
+      case ir::bool_type:
+      case ir::int32_type:
         return {.category = info::rvalue,
-                .result = &add(
-                    {location, semantics::ir::bool_type},
-                    {location, semantics::ir::compare_le{l2.first, r2.first}})};
+                .result = &add({location, ir::bool_type},
+                               {location, ir::compare_le{l2.first, r2.first}})};
     }
   }
   // TODO: Implement comparison of other types.
@@ -994,19 +973,18 @@ expression_checker::info expression_checker::generate(
     io::fatal_message{location, io::message::error}
         << "type mismatch in comparison: " << ltype << " vs. " << rtype << ".";
   }
-  if (auto* b = ltype.get<semantics::ir::builtin_type>()) {
+  if (auto* b = ltype.get<ir::builtin_type>()) {
     const auto& l2 = ensure_loaded(l);
     const auto& r2 = ensure_loaded(r);
     switch (*b) {
-      case semantics::ir::void_type:
+      case ir::void_type:
         // void values are unconditionally equal to each other.
         return {.category = info::rvalue, .result = &add({location, true})};
-      case semantics::ir::bool_type:
-      case semantics::ir::int32_type:
+      case ir::bool_type:
+      case ir::int32_type:
         return {.category = info::rvalue,
-                .result = &add(
-                    {location, semantics::ir::bool_type},
-                    {location, semantics::ir::compare_gt{l2.first, r2.first}})};
+                .result = &add({location, ir::bool_type},
+                               {location, ir::compare_gt{l2.first, r2.first}})};
     }
   }
   // TODO: Implement comparison of other types.
@@ -1024,19 +1002,18 @@ expression_checker::info expression_checker::generate(
     io::fatal_message{location, io::message::error}
         << "type mismatch in comparison: " << ltype << " vs. " << rtype << ".";
   }
-  if (auto* b = ltype.get<semantics::ir::builtin_type>()) {
+  if (auto* b = ltype.get<ir::builtin_type>()) {
     const auto& l2 = ensure_loaded(l);
     const auto& r2 = ensure_loaded(r);
     switch (*b) {
-      case semantics::ir::void_type:
+      case ir::void_type:
         // void values are unconditionally equal to each other.
         return {.category = info::rvalue, .result = &add({location, true})};
-      case semantics::ir::bool_type:
-      case semantics::ir::int32_type:
+      case ir::bool_type:
+      case ir::int32_type:
         return {.category = info::rvalue,
-                .result = &add(
-                    {location, semantics::ir::bool_type},
-                    {location, semantics::ir::compare_ge{l2.first, r2.first}})};
+                .result = &add({location, ir::bool_type},
+                               {location, ir::compare_ge{l2.first, r2.first}})};
     }
   }
   // TODO: Implement comparison of other types.
@@ -1046,14 +1023,14 @@ expression_checker::info expression_checker::generate(
 
 expression_checker::info expression_checker::generate(
     io::location location, const ast::logical_and& a) {
-  const auto& mem = alloc({location, semantics::ir::bool_type});
+  const auto& mem = alloc({location, ir::bool_type});
   generate_into(mem, location, a);
   return {.category = info::lvalue, .result = &mem};
 }
 
 expression_checker::info expression_checker::generate(
     io::location location, const ast::logical_or& o) {
-  const auto& mem = alloc({location, semantics::ir::bool_type});
+  const auto& mem = alloc({location, ir::bool_type});
   generate_into(mem, location, o);
   return {.category = info::xvalue, .result = &mem};
 }
@@ -1066,9 +1043,8 @@ expression_checker::info expression_checker::generate(
         << "cannot logically negate expression of type " << inner.result->second
         << ".";
   }
-  const auto& result =
-      add({location, semantics::ir::bool_type},
-          {location, semantics::ir::logical_not{inner.result->first}});
+  const auto& result = add({location, ir::bool_type},
+                           {location, ir::logical_not{inner.result->first}});
   return {.category = info::rvalue, .result = &result};
 }
 
@@ -1091,7 +1067,7 @@ expression_checker::info expression_checker::generate(
 void expression_checker::generate_into(const local_info& address,
                                        io::location location,
                                        const ast::literal_aggregate& a,
-                                       const semantics::ir::array_type& array) {
+                                       const ir::array_type& array) {
   // Array literals can either have delimited indices, e.g.
   // `[256]bool{[42] = true}`, or they can have ordered bare values, e.g.
   // `[3]int32{1, 2, 3}`. These two options cannot be mixed, and only the
@@ -1149,7 +1125,7 @@ void expression_checker::generate_into(const local_info& address,
                                        io::location location,
                                        const ast::literal_aggregate& a) {
   const auto type = environment.check_type(a.type);
-  if (const auto* array = type.get<semantics::ir::array_type>()) {
+  if (const auto* array = type.get<ir::array_type>()) {
     return generate_into(address, location, a, *array);
   }
   // TODO: Implement object literals.
@@ -1162,9 +1138,8 @@ void expression_checker::generate_into(const local_info& address,
                                        const ast::logical_and& a) {
   const auto end = program.symbol();
   generate_into(address, a.left);
-  const auto& value =
-      add({location, semantics::ir::bool_type},
-          {location, semantics::ir::logical_not{load(address).first}});
+  const auto& value = add({location, ir::bool_type},
+                          {location, ir::logical_not{load(address).first}});
   conditional_jump(location, value, end);
   generate_into(address, a.right);
   label(end);
