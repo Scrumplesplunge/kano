@@ -6,7 +6,6 @@ module;
 
 export module syntax.check;
 
-import overload;
 import syntax.parse;
 export import semantics.ir;
 import <iostream>;
