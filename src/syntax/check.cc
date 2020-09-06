@@ -64,6 +64,95 @@ struct environment {
                           std::string name, name_type type);
 };
 
+struct expression_checker {
+  module_checker& module;
+  semantics::ir::expression result = {};
+
+  using local_info =
+      std::pair<const semantics::ir::local, semantics::ir::data_type>;
+
+  struct info {
+    // Every value has a category which describes how that value can be used.
+    // This is distinct from the notion of a type, as the category is always
+    // implicit and never composes.
+    //
+    // An lvalue is a named quantity. The name can be read as `left value`, as
+    // if to say that an lvalue may appear on the left side of an assignment.
+    // However, this does not mean that all lvalues can be assigned to: an
+    // lvalue may still be of an unassignable type, such as a function. These
+    // are always represented in the IR as a pointer to a memory location.
+    //
+    // An rvalue is a pure value. For example, a literal integer is an rvalue.
+    // These are represented as inline values, so they can only be
+    // register-sized.
+    //
+    // An xvalue is an expiring lvalue. That is, it's also represented as
+    // a pointer to a memory location, but unlike an lvalue it is to be
+    // considered movable.
+    enum { lvalue, rvalue, xvalue } category;
+    const local_info* result;
+  };
+
+  const semantics::ir::data_type& effective_type(const info&);
+
+  const local_info& add(semantics::ir::data_type, semantics::ir::action);
+  const local_info& add(semantics::ir::value);
+  const local_info& alloc(semantics::ir::data_type);
+  // Given a pointer to an indexable object (i.e. [n]T) and an index i, produce
+  // a pointer to the ith element of the object.
+  const local_info& index(io::location, const local_info&, const local_info&);
+  const local_info& ensure_loaded(const info&);
+  const local_info& load(const local_info&);
+  void label(semantics::ir::symbol);
+  void conditional_jump(io::location, const local_info&, semantics::ir::symbol);
+  void construct_into(const local_info&, const info&);
+
+  info generate(io::location, const environment::name_info&);
+  info generate(io::location, const ast::identifier&);
+  info generate(io::location, const ast::literal_integer&);
+  info generate(io::location, const ast::literal_string&);
+  info generate(io::location, const ast::literal_aggregate&,
+                const semantics::ir::array_type&);
+  info generate(io::location, const ast::literal_aggregate&);
+  info generate(io::location, const ast::array_type&);
+  info generate(io::location, const ast::dot&);
+  info generate(io::location, const ast::dereference&);
+  info generate(io::location, const ast::address_of&);
+  info generate(io::location, const ast::index&);
+  info generate(io::location, const ast::negate&);
+  info generate(io::location, const ast::add&);
+  info generate(io::location, const ast::subtract&);
+  info generate(io::location, const ast::multiply&);
+  info generate(io::location, const ast::divide&);
+  info generate(io::location, const ast::modulo&);
+  info generate(io::location, const ast::compare_eq&);
+  info generate(io::location, const ast::compare_ne&);
+  info generate(io::location, const ast::compare_lt&);
+  info generate(io::location, const ast::compare_le&);
+  info generate(io::location, const ast::compare_gt&);
+  info generate(io::location, const ast::compare_ge&);
+  info generate(io::location, const ast::logical_and&);
+  info generate(io::location, const ast::logical_or&);
+  info generate(io::location, const ast::logical_not&);
+  info generate(io::location, const ast::call&);
+  info generate(const ast::expression&);
+
+  // Like generate, but instead of generating the value into a local, generate
+  // and store the value at the given address.
+  void generate_into(const local_info&, io::location,
+                     const ast::literal_aggregate&,
+                     const semantics::ir::array_type&);
+  void generate_into(const local_info&, io::location,
+                     const ast::literal_aggregate&);
+  void generate_into(const local_info&, io::location, const ast::logical_and&);
+  void generate_into(const local_info&, io::location, const ast::logical_or&);
+  template <typename T>
+  void generate_into(const local_info& address, io::location l, const T& x) {
+    construct_into(address, generate(l, x));
+  }
+  void generate_into(const local_info&, const ast::expression&);
+};
+
 struct module_data {
   bool checked = false;
   std::filesystem::path path;
@@ -158,95 +247,6 @@ struct module_checker {
   semantics::ir::data_type check_type(const ast::expression&);
 
   const environment::name_info& resolve(const ast::expression&);
-};
-
-struct expression_checker {
-  module_checker& module;
-  semantics::ir::expression result = {};
-
-  using local_info =
-      std::pair<const semantics::ir::local, semantics::ir::data_type>;
-
-  struct info {
-    // Every value has a category which describes how that value can be used.
-    // This is distinct from the notion of a type, as the category is always
-    // implicit and never composes.
-    //
-    // An lvalue is a named quantity. The name can be read as `left value`, as
-    // if to say that an lvalue may appear on the left side of an assignment.
-    // However, this does not mean that all lvalues can be assigned to: an
-    // lvalue may still be of an unassignable type, such as a function. These
-    // are always represented in the IR as a pointer to a memory location.
-    //
-    // An rvalue is a pure value. For example, a literal integer is an rvalue.
-    // These are represented as inline values, so they can only be
-    // register-sized.
-    //
-    // An xvalue is an expiring lvalue. That is, it's also represented as
-    // a pointer to a memory location, but unlike an lvalue it is to be
-    // considered movable.
-    enum { lvalue, rvalue, xvalue } category;
-    const local_info* result;
-  };
-
-  const semantics::ir::data_type& effective_type(const info&);
-
-  const local_info& add(semantics::ir::data_type, semantics::ir::action);
-  const local_info& add(semantics::ir::value);
-  const local_info& alloc(semantics::ir::data_type);
-  // Given a pointer to an indexable object (i.e. [n]T) and an index i, produce
-  // a pointer to the ith element of the object.
-  const local_info& index(io::location, const local_info&, const local_info&);
-  const local_info& ensure_loaded(const info&);
-  const local_info& load(const local_info&);
-  void label(semantics::ir::symbol);
-  void conditional_jump(io::location, const local_info&, semantics::ir::symbol);
-  void construct_into(const local_info&, const info&);
-
-  info generate(io::location, const environment::name_info&);
-  info generate(io::location, const ast::identifier&);
-  info generate(io::location, const ast::literal_integer&);
-  info generate(io::location, const ast::literal_string&);
-  info generate(io::location, const ast::literal_aggregate&,
-                const semantics::ir::array_type&);
-  info generate(io::location, const ast::literal_aggregate&);
-  info generate(io::location, const ast::array_type&);
-  info generate(io::location, const ast::dot&);
-  info generate(io::location, const ast::dereference&);
-  info generate(io::location, const ast::address_of&);
-  info generate(io::location, const ast::index&);
-  info generate(io::location, const ast::negate&);
-  info generate(io::location, const ast::add&);
-  info generate(io::location, const ast::subtract&);
-  info generate(io::location, const ast::multiply&);
-  info generate(io::location, const ast::divide&);
-  info generate(io::location, const ast::modulo&);
-  info generate(io::location, const ast::compare_eq&);
-  info generate(io::location, const ast::compare_ne&);
-  info generate(io::location, const ast::compare_lt&);
-  info generate(io::location, const ast::compare_le&);
-  info generate(io::location, const ast::compare_gt&);
-  info generate(io::location, const ast::compare_ge&);
-  info generate(io::location, const ast::logical_and&);
-  info generate(io::location, const ast::logical_or&);
-  info generate(io::location, const ast::logical_not&);
-  info generate(io::location, const ast::call&);
-  info generate(const ast::expression&);
-
-  // Like generate, but instead of generating the value into a local, generate
-  // and store the value at the given address.
-  void generate_into(const local_info&, io::location,
-                     const ast::literal_aggregate&,
-                     const semantics::ir::array_type&);
-  void generate_into(const local_info&, io::location,
-                     const ast::literal_aggregate&);
-  void generate_into(const local_info&, io::location, const ast::logical_and&);
-  void generate_into(const local_info&, io::location, const ast::logical_or&);
-  template <typename T>
-  void generate_into(const local_info& address, io::location l, const T& x) {
-    construct_into(address, generate(l, x));
-  }
-  void generate_into(const local_info&, const ast::expression&);
 };
 
 const environment::name_info& environment::lookup(module_checker& module,
