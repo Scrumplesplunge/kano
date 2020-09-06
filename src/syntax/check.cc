@@ -218,6 +218,7 @@ struct module_checker {
   const std::filesystem::path& path;
   module_data& module;
   environment environment = {&program.builtins};
+  expression_checker initialization = {program, environment};
 
   // Returns a visually pleasing version of the filename for use in messages.
   std::string name() const;
@@ -355,11 +356,9 @@ const environment::name_info& module_checker::check(
   const auto& info =
       environment.define(l, v.id.value, global{type}, program.symbol());
   if (v.initializer) {
-    expression_checker checker{program, environment};
     const auto& lhs =
-        checker.add({l, semantics::ir::pointer{info.symbol, type}});
-    checker.generate_into(lhs, *v.initializer);
-    // TODO: Consume the resulting expression.
+        initialization.add({l, semantics::ir::pointer{info.symbol, type}});
+    initialization.generate_into(lhs, *v.initializer);
   }
   return info;
 }
