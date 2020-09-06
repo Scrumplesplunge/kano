@@ -161,10 +161,6 @@ struct module_checker {
 
   semantics::ir::data_type check_type(const ast::expression&);
 
-  semantics::ir::expression check_expression(io::location,
-                                             const ast::identifier&);
-  semantics::ir::expression check_expression(const ast::expression&);
-
   const environment::name_info& resolve(const ast::expression&);
 };
 
@@ -470,22 +466,6 @@ semantics::ir::data_type module_checker::check_type(
   }
   io::fatal_message{name(), e.location(), io::message::error}
       << "unsupported type expression.";
-}
-
-semantics::ir::expression module_checker::check_expression(
-    io::location l, const ast::identifier& i) {
-  const auto& info = environment.lookup(*this, l, i.value);
-  if (const auto* type = std::get_if<global>(&info.type)) {
-
-  }
-  io::fatal_message{name(), l, io::message::error}
-      << "unimplemented.";
-}
-
-semantics::ir::expression module_checker::check_expression(
-    const ast::expression& e) {
-  io::fatal_message{name(), e.location(), io::message::error}
-      << "unimplemented.";
 }
 
 const environment::name_info& module_checker::resolve(
