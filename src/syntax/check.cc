@@ -68,7 +68,7 @@ struct environment {
 struct expression_checker {
   checker& program;
   const environment& environment;
-  ir::function result = {};
+  ir::function& result;
 
   using local_info = std::pair<const ir::local, ir::data_type>;
 
@@ -173,6 +173,7 @@ struct type_info {
 struct checker {
   ir::symbol next_symbol = ir::symbol::first_user_symbol;
   ir::local next_local = {};
+  ir::function initialization = {};
   std::map<std::filesystem::path, module_data> modules;
   // Map from structural type to its symbolic name. This is used for looking up
   // operators for moving values of this type around.
@@ -212,7 +213,8 @@ struct module_checker {
   const std::filesystem::path& path;
   module_data& module;
   environment environment = {&program.builtins};
-  expression_checker initialization = {program, environment};
+  expression_checker initialization = {program, environment,
+                                       program.initialization};
 
   // Returns a visually pleasing version of the filename for use in messages.
   std::string name() const;
