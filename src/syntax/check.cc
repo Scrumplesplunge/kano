@@ -443,9 +443,9 @@ semantics::ir::data_type module_checker::check_type(
     }
   }
   if (const auto* a = e.get<ast::array_type>()) {
-    // TODO: Support nontrivial size expressions.
     const auto* i = a->size.get<ast::literal_integer>();
     if (!i) {
+      // TODO: Support nontrivial size expressions.
       io::fatal_message{name(), a->size.location(), io::message::error}
           << "support for nontrivial size expressions is unimplemented.";
     }
@@ -692,6 +692,7 @@ expression_checker::info expression_checker::generate(
     return {.category = info::lvalue, .result = &result};
   }
   if (const auto* l = std::get_if<local>(&info.type)) {
+    // TODO: Implement code generation for accessing local variables.
     io::fatal_message{module.name(), location, io::message::error}
         << "local variables are unimplemented.";
   }
@@ -701,6 +702,7 @@ expression_checker::info expression_checker::generate(
     io::fatal_message{module.name(), location, io::message::note}
         << "a value literal would have the syntax `type{...}`.";
   }
+  // TODO: Find a nice way to ensure that this function is exhaustative.
   io::fatal_message{module.name(), location, io::message::error}
       << "unimplemented name type.";
 }
@@ -725,6 +727,7 @@ expression_checker::info expression_checker::generate(
 
 expression_checker::info expression_checker::generate(
     io::location location, const ast::literal_string&) {
+  // TODO: Implement string literals.
   io::fatal_message{module.name(), location, io::message::error}
       << "string literals are unimplemented.";
 }
@@ -743,6 +746,7 @@ expression_checker::info expression_checker::generate(
   if (const auto* array = type.get<semantics::ir::array_type>()) {
     return generate(location, a, *array);
   }
+  // TODO: Implement object literals.
   io::fatal_message{module.name(), location, io::message::error}
       << "unimplemented aggregate literal type.";
 }
@@ -1187,6 +1191,7 @@ void expression_checker::generate_into(const local_info& address,
     }
     return;
   }
+  // TODO: Implement designated array literals, e.g. `[256]bool{[42] = true}`.
   io::fatal_message{module.name(), a.type.location(), io::message::error}
       << "unimplemented array literal type.";
 }
@@ -1198,6 +1203,7 @@ void expression_checker::generate_into(const local_info& address,
   if (const auto* array = type.get<semantics::ir::array_type>()) {
     return generate_into(address, location, a, *array);
   }
+  // TODO: Implement object literals.
   io::fatal_message{module.name(), location, io::message::error}
       << "unimplemented aggregate literal type.";
 }
