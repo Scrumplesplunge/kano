@@ -61,6 +61,7 @@ struct environment {
 
 struct expression_checker {
   module_checker& module;
+  const environment& environment;
   semantics::ir::expression result = {};
 
   using local_info =
@@ -354,7 +355,7 @@ const environment::name_info& module_checker::check(
   const auto& info =
       environment.define(l, v.id.value, global{type}, program.symbol());
   if (v.initializer) {
-    expression_checker checker{*this};
+    expression_checker checker{*this, environment};
     const auto& lhs =
         checker.add({l, semantics::ir::pointer{info.symbol, type}});
     checker.generate_into(lhs, *v.initializer);
@@ -664,7 +665,7 @@ expression_checker::info expression_checker::generate(
     io::location location, const ast::identifier& i) {
   // In the IR, we will represent variable references as pointers with an lvalue
   // category.
-  return generate(location, module.environment.lookup(location, i.value));
+  return generate(location, environment.lookup(location, i.value));
 }
 
 expression_checker::info expression_checker::generate(
@@ -717,7 +718,7 @@ expression_checker::info expression_checker::generate(
   // `foo.bar` may instead mean accessing the name `bar` from the imported
   // module `some.path.foo`.
   if (auto* i = d.from.get<ast::identifier>()) {
-    const auto& lhs = module.environment.lookup(location, i->value);
+    const auto& lhs = environment.lookup(location, i->value);
     if (const auto* m = std::get_if<module_type>(&lhs.type)) {
       return generate(location, m->exports->lookup(location, d.id.value));
     }
