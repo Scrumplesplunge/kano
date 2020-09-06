@@ -80,6 +80,10 @@ struct type_info {
   semantics::ir::symbol copy;
   // function move(destination : *T, source : *T) : void { ... }
   semantics::ir::symbol move;
+  // function equal(l : *T, r : *T) : bool { ... }
+  semantics::ir::symbol equal;
+  // function compare(l : *T, r : *T) : int32 { ... }
+  semantics::ir::symbol compare;
 };
 
 struct checker {
@@ -225,6 +229,7 @@ struct expression_checker {
   info generate(io::location, const ast::divide&);
   info generate(io::location, const ast::modulo&);
   info generate(io::location, const ast::compare_eq&);
+  info generate(io::location, const ast::compare_ne&);
   template <typename T>
   info generate(io::location l, const T&) {
     static_assert(!std::is_same_v<T, ast::expression>);
@@ -901,6 +906,36 @@ expression_checker::info expression_checker::generate(
                 .result = &add(
                     {location, semantics::ir::bool_type},
                     {location, semantics::ir::compare_eq{l2.first, r2.first}})};
+    }
+  }
+  // TODO: Implement comparison of other types.
+  io::fatal_message{module.name(), location, io::message::error}
+      << "comparison between objects of type " << ltype << " is unimplemented.";
+}
+
+expression_checker::info expression_checker::generate(
+    io::location location, const ast::compare_ne& c) {
+  const info l = generate(c.left);
+  const info r = generate(c.right);
+  const auto& ltype = effective_type(l);
+  const auto& rtype = effective_type(r);
+  if (ltype != rtype) {
+    io::fatal_message{module.name(), location, io::message::error}
+        << "type mismatch in comparison: " << ltype << " vs. " << rtype << ".";
+  }
+  if (auto* b = ltype.get<semantics::ir::builtin_type>()) {
+    const auto& l2 = ensure_loaded(l);
+    const auto& r2 = ensure_loaded(r);
+    switch (*b) {
+      case semantics::ir::void_type:
+        // void values are unconditionally equal to each other.
+        return {.category = info::rvalue, .result = &add({location, true})};
+      case semantics::ir::bool_type:
+      case semantics::ir::int32_type:
+        return {.category = info::rvalue,
+                .result = &add(
+                    {location, semantics::ir::bool_type},
+                    {location, semantics::ir::compare_ne{l2.first, r2.first}})};
     }
   }
   // TODO: Implement comparison of other types.
