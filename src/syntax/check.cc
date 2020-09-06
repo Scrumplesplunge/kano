@@ -238,12 +238,7 @@ struct expression_checker {
   info generate(io::location, const ast::logical_and&);
   info generate(io::location, const ast::logical_or&);
   info generate(io::location, const ast::logical_not&);
-  template <typename T>
-  info generate(io::location l, const T&) {
-    static_assert(!std::is_same_v<T, ast::expression>);
-    io::fatal_message{module.name(), l, io::message::error}
-        << "unimplemented expression type " << __PRETTY_FUNCTION__;
-  }
+  info generate(io::location, const ast::call&);
   info generate(const ast::expression&);
 
   // Like generate, but instead of generating the value into a local, generate
@@ -1120,6 +1115,17 @@ expression_checker::info expression_checker::generate(
       add({location, semantics::ir::bool_type},
           {location, semantics::ir::logical_not{inner.result->first}});
   return {.category = info::rvalue, .result = &result};
+}
+
+expression_checker::info expression_checker::generate(
+    io::location location, const ast::call& c) {
+  generate(c.callee);
+  for (const auto& argument : c.arguments) generate(argument);
+  // TODO: Implement function calls. This will require deciding how to pass each
+  // value type. Probably a simple option is to pass all builtins in registers
+  // and all aggregate types by reference.
+  io::fatal_message{module.name(), location, io::message::error}
+      << "function calls are unimplemented.";
 }
 
 expression_checker::info expression_checker::generate(
