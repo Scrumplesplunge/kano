@@ -58,6 +58,9 @@ struct environment {
   // Define a name within the current scope.
   const name_info& define(io::location location, std::string name,
                           name_type type, semantics::ir::symbol symbol);
+
+  semantics::ir::data_type check_type(const ast::expression&) const;
+  const environment::name_info& resolve(const ast::expression&) const;
 };
 
 struct expression_checker {
@@ -238,10 +241,6 @@ struct module_checker {
                                       const ast::class_definition&);
   const environment::name_info& check(const ast::definition&);
   const environment::name_info& check(const ast::exported_definition&);
-
-  semantics::ir::data_type check_type(const ast::expression&);
-
-  const environment::name_info& resolve(const ast::expression&);
 };
 
 const environment::name_info& environment::lookup(io::location location,
@@ -353,7 +352,7 @@ void module_checker::check(io::location l, const ast::import_statement& i) {
 
 const environment::name_info& module_checker::check(
     io::location l, const ast::variable_definition& v) {
-  const auto type = check_type(v.type);
+  const auto type = environment.check_type(v.type);
   const auto& info =
       environment.define(l, v.id.value, global{type}, program.symbol());
   if (v.initializer) {
@@ -368,17 +367,18 @@ const environment::name_info& module_checker::check(
 
 const environment::name_info& module_checker::check(io::location l,
                                             const ast::alias_definition& a) {
-  return environment.define(l, a.id.value, type_type{check_type(a.type)},
+  return environment.define(l, a.id.value,
+                            type_type{environment.check_type(a.type)},
                             program.symbol());
 }
 
 const environment::name_info& module_checker::check(
     io::location l, const ast::function_definition& f) {
-  auto return_type = check_type(f.return_type);
+  auto return_type = environment.check_type(f.return_type);
   std::vector<semantics::ir::data_type> parameters;
   for (const auto& parameter : f.parameters) {
     // TODO: Check that parameter names are not duplicated.
-    parameters.push_back(check_type(parameter.type));
+    parameters.push_back(environment.check_type(parameter.type));
   }
   // TODO: Check the function body.
   return environment.define(l, f.id.value,
@@ -410,10 +410,30 @@ const environment::name_info& module_checker::check(
   return info;
 }
 
-semantics::ir::data_type module_checker::check_type(
-    const ast::expression& e) {
+const environment::name_info& environment::resolve(
+    const ast::expression& e) const {
   if (const auto* i = e.get<ast::identifier>()) {
-    const auto& info = environment.lookup(e.location(), i->value);
+    return lookup(e.location(), i->value);
+  }
+  if (const auto* d = e.get<ast::dot>()) {
+    const auto& lhs = resolve(d->from);
+    if (const auto* m = std::get_if<module_type>(&lhs.type)) {
+      // TODO: Improve the error message for unknown names here. It might be
+      // nice to point the user at the definition for the LHS in this case.
+      return m->exports->lookup(e.location(), d->id.value);
+    }
+    io::fatal_message{e.location(), io::message::error}
+        << "expected module on left hand side of '.'.";
+  }
+  // TODO: Implement support for nested types.
+  io::fatal_message{e.location(), io::message::error}
+      << "unsupported scope expression.";
+}
+
+semantics::ir::data_type environment::check_type(
+    const ast::expression& e) const {
+  if (const auto* i = e.get<ast::identifier>()) {
+    const auto& info = lookup(e.location(), i->value);
     if (const auto* type = std::get_if<type_type>(&info.type)) {
       return type->type;
     } else {
@@ -449,26 +469,6 @@ semantics::ir::data_type module_checker::check_type(
   }
   io::fatal_message{e.location(), io::message::error}
       << "unsupported type expression.";
-}
-
-const environment::name_info& module_checker::resolve(
-    const ast::expression& e) {
-  if (const auto* i = e.get<ast::identifier>()) {
-    return environment.lookup(e.location(), i->value);
-  }
-  if (const auto* d = e.get<ast::dot>()) {
-    const auto& lhs = resolve(d->from);
-    if (const auto* m = std::get_if<module_type>(&lhs.type)) {
-      // TODO: Improve the error message for unknown names here. It might be
-      // nice to point the user at the definition for the LHS in this case.
-      return m->exports->lookup(e.location(), d->id.value);
-    }
-    io::fatal_message{e.location(), io::message::error}
-        << "expected module on left hand side of '.'.";
-  }
-  // TODO: Implement support for nested types.
-  io::fatal_message{e.location(), io::message::error}
-      << "unsupported scope expression.";
 }
 
 const semantics::ir::data_type& expression_checker::effective_type(
@@ -697,7 +697,7 @@ expression_checker::info expression_checker::generate(
 
 expression_checker::info expression_checker::generate(
     io::location location, const ast::literal_aggregate& a) {
-  const auto type = module.check_type(a.type);
+  const auto type = environment.check_type(a.type);
   if (const auto* array = type.get<semantics::ir::array_type>()) {
     return generate(location, a, *array);
   }
@@ -1150,7 +1150,7 @@ void expression_checker::generate_into(const local_info& address,
 void expression_checker::generate_into(const local_info& address,
                                        io::location location,
                                        const ast::literal_aggregate& a) {
-  const auto type = module.check_type(a.type);
+  const auto type = environment.check_type(a.type);
   if (const auto* array = type.get<semantics::ir::array_type>()) {
     return generate_into(address, location, a, *array);
   }
