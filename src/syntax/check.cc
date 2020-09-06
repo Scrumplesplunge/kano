@@ -36,10 +36,6 @@ struct type_type {
 using name_type = std::variant<semantics::ir::function_type, module_type,
                                global, local, type_type>;
 
-struct definition {
-  // TODO: Add guts.
-};
-
 struct module_checker;
 
 // An environment keeps track of what names are currently in scope, and what
