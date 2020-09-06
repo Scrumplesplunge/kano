@@ -229,6 +229,22 @@ struct compare_ne {
   local left, right;
 };
 
+struct compare_lt {
+  local left, right;
+};
+
+struct compare_le {
+  local left, right;
+};
+
+struct compare_gt {
+  local left, right;
+};
+
+struct compare_ge {
+  local left, right;
+};
+
 // Given a *T referring to an array of T, produces a *T referring to the nth
 // element of that array.
 struct index {
@@ -236,9 +252,9 @@ struct index {
   local offset;
 };
 
-using action =
-    node<constant, stack_allocate, load, store, call, negate, add, subtract,
-         multiply, divide, modulo, compare_eq, compare_ne, index>;
+using action = node<constant, stack_allocate, load, store, call, negate, add,
+                    subtract, multiply, divide, modulo, compare_eq, compare_ne,
+                    compare_lt, compare_le, compare_gt, compare_ge, index>;
 
 struct step {
   local destination;
