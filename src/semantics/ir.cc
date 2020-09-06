@@ -129,9 +129,8 @@ std::ostream& operator<<(std::ostream& output, const function_pointer_type& f) {
 struct void_value {};
 struct pointer;
 struct function_pointer;
-struct array;
 using value =
-    node<void_value, bool, std::int32_t, pointer, function_pointer, array>;
+    node<void_value, bool, std::int32_t, pointer, function_pointer>;
 
 struct pointer {
   symbol symbol;
@@ -143,11 +142,6 @@ struct function_pointer {
   function_type pointee_type;
 };
 
-struct array {
-  std::vector<value> contents;
-  data_type element_type;
-};
-
 data_type type_of(const value&);
 builtin_type type_of(const void_value&) { return builtin_type::void_type; }
 builtin_type type_of(bool) { return builtin_type::bool_type; }
@@ -155,14 +149,6 @@ builtin_type type_of(std::int32_t) { return builtin_type::int32_type; }
 pointer_type type_of(const pointer& p) { return pointer_type{p.pointee_type}; }
 function_pointer_type type_of(const function_pointer& f) {
   return function_pointer_type{f.pointee_type};
-}
-array_type type_of(const array& a) {
-  DEBUG_ONLY {
-    for (const auto& x : a.contents) {
-      assert(type_of(x) == a.element_type);
-    }
-  }
-  return array_type{a.contents.size(), a.element_type};
 }
 
 data_type type_of(const value& v) {
