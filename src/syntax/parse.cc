@@ -275,16 +275,7 @@ struct parser : io::reader {
   }
 
   ast::expression parse_expression() {
-    ast::expression left = parse_sum();
-    skip_whitespace_and_comments();
-    const auto l = location();
-    if (try_symbol("<")) {
-      return {l, ast::compare_lt{std::move(left), parse_sum()}};
-    } else if (try_symbol("==")) {
-      return {l, ast::compare_eq{std::move(left), parse_sum()}};
-    } else {
-      return left;
-    }
+    return parse_disjunction();
   }
 
   ast::statement parse_import_statement() {
