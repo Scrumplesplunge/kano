@@ -15,7 +15,15 @@ import <string_view>;
 
 namespace io {
 
-export std::string_view open(const char* filename) {
+struct input {
+  std::string name;
+  std::string_view source;
+};
+
+// Open a file for reading. This intentionally leaks resources: the mmap is
+// opened and never closed, and a copy of the filename is allocated but never
+// freed. For this reason, calls to open should be limited to a small number.
+export const input& open(const char* filename) {
   int fd = ::open(filename, O_RDONLY);
   if (fd < 0) {
     fprintf(stderr, "failed to open file \"%s\": %s\n", filename,
@@ -36,7 +44,7 @@ export std::string_view open(const char* filename) {
     exit(1);
   }
   close(fd);
-  return std::string_view(data, info.st_size);
+  return *new input{filename, std::string_view(data, info.st_size)};
 }
 
 export struct location {
@@ -168,12 +176,12 @@ export constexpr int parse_hex(char c) {
 export class reader {
  public:
   reader(const char* filename)
-      : filename_(filename), source_(open(filename)) {
-    assert(!source_.empty());
-    assert(source_.back() == '\n');
+      : input_(open(filename)) {
+    assert(!input_.source.empty());
+    assert(input_.source.back() == '\n');
   }
 
-  std::string_view filename() const { return filename_; }
+  std::string_view filename() const { return input_.name; }
 
   void skip_hspace() {
     const char* const begin = remaining_.data();
@@ -298,7 +306,7 @@ export class reader {
   }
 
   io::message message(message::type type, io::location l) const {
-    return {filename_, l, type};
+    return {input_.name, l, type};
   }
 
   io::message message(message::type type) const {
@@ -306,7 +314,7 @@ export class reader {
   }
 
   io::fatal_message die(io::location l) const {
-    return {filename_, l, io::message::error};
+    return {input_.name, l, io::message::error};
   }
 
   io::fatal_message die() const { return die(location()); }
@@ -328,7 +336,7 @@ export class reader {
   }
 
   void rewind(io::location location) {
-    const auto begin = source_.data(), end = begin + source_.size();
+    const auto begin = input_.source.data(), end = begin + input_.source.size();
     assert(begin <= location.position && location.position <= end);
     line_ = location.line;
     column_ = location.column;
@@ -336,11 +344,9 @@ export class reader {
   }
 
  private:
-
-  const std::string filename_;
-  const std::string_view source_;
+  const io::input& input_;
   int line_ = 1, column_ = 1;
-  std::string_view remaining_ = source_;
+  std::string_view remaining_ = input_.source;
 };
 
 }  // namespace io
