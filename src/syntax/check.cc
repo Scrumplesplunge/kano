@@ -249,13 +249,20 @@ struct module_checker {
   const environment::name_info& check(const ast::exported_definition&);
 };
 
-struct function_checker {
+struct function_checker : function_builder<ir::function> {
   module_checker& module;
   const ir::function_type& type;
-  ir::function body = {};
   environment environment = {&module.environment};
 
   void check(io::location, const ast::function_definition&);
+
+  void check_statement(io::location, const ast::import_statement&);
+  void check_statement(io::location, const ast::variable_definition&);
+  void check_statement(io::location, const ast::alias_definition&);
+  void check_statement(io::location, const ast::function_definition&);
+  void check_statement(io::location, const ast::class_definition&);
+  void check_statement(io::location, const ast::definition&);
+  void check_statement(io::location, const ast::exported_definition&);
 };
 
 const environment::name_info& environment::lookup(io::location location,
@@ -397,7 +404,8 @@ const environment::name_info& module_checker::check(
       l, f.id.value,
       ir::function_type{std::move(return_type), std::move(parameters)},
       program.symbol());
-  function_checker checker{*this, std::get<ir::function_type>(info.type)};
+  function_checker checker{
+      {program, {}}, *this, std::get<ir::function_type>(info.type)};
   checker.check(l, f);
   return info;
 }
@@ -1180,6 +1188,58 @@ void function_checker::check(io::location l,
         << "functions with parameters or with a non-void return type are "
            "unimplemented.";
   }
+}
+
+void function_checker::check_statement(io::location l,
+                                       const ast::import_statement&) {
+  io::fatal_message{l, io::message::error}
+      << "import statements may not appear inside functions.";
+}
+
+// TODO: Some of these functions look very similar to the function in
+// module_checker, maybe they can be merged together somehow.
+
+void function_checker::check_statement(io::location l,
+                                       const ast::variable_definition& v) {
+  const auto type = environment.check_type(v.type);
+  const auto& info =
+      environment.define(l, v.id.value, local{type}, module.program.symbol());
+  if (v.initializer) {
+    expression_checker checker{{program, result}, environment};
+    const auto& lhs = checker.add({l, ir::pointer{info.symbol, type}});
+    checker.generate_into(lhs, *v.initializer);
+  }
+}
+
+void function_checker::check_statement(io::location l,
+                                       const ast::alias_definition& a) {
+  environment.define(l, a.id.value, type_type{environment.check_type(a.type)},
+                     program.symbol());
+}
+
+void function_checker::check_statement(io::location l,
+                                       const ast::function_definition&) {
+  io::fatal_message{l, io::message::error}
+      << "function definitions may not appear inside other functions.";
+}
+
+void function_checker::check_statement(io::location l,
+                                       const ast::class_definition&) {
+  // TODO: There's no real reason to forbid local classes, so this should be
+  // implemented.
+  io::fatal_message{l, io::message::error}
+      << "class definitions may not appear inside other functions.";
+}
+
+void function_checker::check_statement(io::location l,
+                                       const ast::definition& d) {
+  d.visit([&](const auto& x) { check_statement(l, x); });
+}
+
+void function_checker::check_statement(io::location l,
+                                       const ast::exported_definition&) {
+  io::fatal_message{l, io::message::error}
+      << "exports may not appear inside functions.";
 }
 
 export void check(const char* filename) {
