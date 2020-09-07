@@ -15,6 +15,12 @@ namespace syntax {
 
 namespace ir = ::semantics::ir;
 
+template <ir::builtin_type t>
+constexpr bool is(const ir::data_type& x) {
+  const auto* b = x.get<ir::builtin_type>();
+  return b && *b == t;
+}
+
 struct environment;
 
 struct module_type {
@@ -543,15 +549,10 @@ void expression_checker::label(ir::symbol s) {
   assert(is_new);
 }
 
-constexpr bool is_bool(const ir::data_type& t) {
-  const auto* b = t.get<ir::builtin_type>();
-  return b && *b == ir::bool_type;
-}
-
 void expression_checker::conditional_jump(io::location location,
                                           const local_info& condition,
                                           ir::symbol target) {
-  assert(is_bool(condition.second));
+  assert(is<ir::bool_type>(condition.second));
   add({location, ir::void_type},
       {location, ir::conditional_jump{condition.first, target}});
 }
@@ -742,18 +743,13 @@ expression_checker::info expression_checker::generate(io::location location,
   return {.category = info::lvalue, .result = &result};
 }
 
-constexpr bool is_integral(const ir::data_type& t) {
-  const auto* b = t.get<ir::builtin_type>();
-  return b && *b == ir::int32_type;
-}
-
 // TODO: There is a load of duplication for the functions handling different
 // arithmetic operators. Figure out a nice way of removing all the duplication.
 
 expression_checker::info expression_checker::generate(
     io::location location, const ast::negate& n) {
   const auto& l = ensure_loaded(generate(n.inner));
-  if (!is_integral(l.second)) {
+  if (!is<ir::int32_type>(l.second)) {
     io::fatal_message{location, io::message::error}
         << "can't negate expression of type " << l.second << '.';
   }
@@ -767,11 +763,11 @@ expression_checker::info expression_checker::generate(
   const auto& l = ensure_loaded(generate(a.left));
   const auto& r = ensure_loaded(generate(a.right));
   // TODO: Implement pointer arithmetic.
-  if (!is_integral(l.second)) {
+  if (!is<ir::int32_type>(l.second)) {
     io::fatal_message{a.left.location(), io::message::error}
         << "can't add expression of type " << l.second << '.';
   }
-  if (!is_integral(r.second)) {
+  if (!is<ir::int32_type>(r.second)) {
     io::fatal_message{a.right.location(), io::message::error}
         << "can't add expression of type " << r.second << '.';
   }
@@ -785,11 +781,11 @@ expression_checker::info expression_checker::generate(
   const auto& l = ensure_loaded(generate(s.left));
   const auto& r = ensure_loaded(generate(s.right));
   // TODO: Implement pointer arithmetic.
-  if (!is_integral(l.second)) {
+  if (!is<ir::int32_type>(l.second)) {
     io::fatal_message{s.left.location(), io::message::error}
         << "can't add expression of type " << l.second << '.';
   }
-  if (!is_integral(r.second)) {
+  if (!is<ir::int32_type>(r.second)) {
     io::fatal_message{s.right.location(), io::message::error}
         << "can't add expression of type " << r.second << '.';
   }
@@ -802,11 +798,11 @@ expression_checker::info expression_checker::generate(
     io::location location, const ast::multiply& m) {
   const auto& l = ensure_loaded(generate(m.left));
   const auto& r = ensure_loaded(generate(m.right));
-  if (!is_integral(l.second)) {
+  if (!is<ir::int32_type>(l.second)) {
     io::fatal_message{m.left.location(), io::message::error}
         << "can't add expression of type " << l.second << '.';
   }
-  if (!is_integral(r.second)) {
+  if (!is<ir::int32_type>(r.second)) {
     io::fatal_message{m.right.location(), io::message::error}
         << "can't add expression of type " << r.second << '.';
   }
@@ -819,11 +815,11 @@ expression_checker::info expression_checker::generate(
     io::location location, const ast::divide& d) {
   const auto& l = ensure_loaded(generate(d.left));
   const auto& r = ensure_loaded(generate(d.right));
-  if (!is_integral(l.second)) {
+  if (!is<ir::int32_type>(l.second)) {
     io::fatal_message{d.left.location(), io::message::error}
         << "can't add expression of type " << l.second << '.';
   }
-  if (!is_integral(r.second)) {
+  if (!is<ir::int32_type>(r.second)) {
     io::fatal_message{d.right.location(), io::message::error}
         << "can't add expression of type " << r.second << '.';
   }
@@ -836,11 +832,11 @@ expression_checker::info expression_checker::generate(
     io::location location, const ast::modulo& m) {
   const auto& l = ensure_loaded(generate(m.left));
   const auto& r = ensure_loaded(generate(m.right));
-  if (!is_integral(l.second)) {
+  if (!is<ir::int32_type>(l.second)) {
     io::fatal_message{m.left.location(), io::message::error}
         << "can't add expression of type " << l.second << '.';
   }
-  if (!is_integral(r.second)) {
+  if (!is<ir::int32_type>(r.second)) {
     io::fatal_message{m.right.location(), io::message::error}
         << "can't add expression of type " << r.second << '.';
   }
@@ -1040,7 +1036,7 @@ expression_checker::info expression_checker::generate(
 expression_checker::info expression_checker::generate(
     io::location location, const ast::logical_not& n) {
   const auto inner = generate(n.inner);
-  if (!is_bool(inner.result->second)) {
+  if (!is<ir::bool_type>(inner.result->second)) {
     io::fatal_message{location, io::message::error}
         << "cannot logically negate expression of type " << inner.result->second
         << ".";
