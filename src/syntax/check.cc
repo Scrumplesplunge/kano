@@ -71,34 +71,34 @@ struct environment {
   const environment::name_info& resolve(const ast::expression&) const;
 };
 
+using local_info = std::pair<const ir::local, ir::data_type>;
+
+struct info {
+  // Every value has a category which describes how that value can be used.
+  // This is distinct from the notion of a type, as the category is always
+  // implicit and never composes.
+  //
+  // An lvalue is a named quantity. The name can be read as `left value`, as
+  // if to say that an lvalue may appear on the left side of an assignment.
+  // However, this does not mean that all lvalues can be assigned to: an
+  // lvalue may still be of an unassignable type, such as a function. These
+  // are always represented in the IR as a pointer to a memory location.
+  //
+  // An rvalue is a pure value. For example, a literal integer is an rvalue.
+  // These are represented as inline values, so they can only be
+  // register-sized.
+  //
+  // An xvalue is an expiring lvalue. That is, it's also represented as
+  // a pointer to a memory location, but unlike an lvalue it is to be
+  // considered movable.
+  enum { lvalue, rvalue, xvalue } category;
+  const local_info* result;
+};
+
 struct expression_checker {
   checker& program;
   const environment& environment;
   ir::function& result;
-
-  using local_info = std::pair<const ir::local, ir::data_type>;
-
-  struct info {
-    // Every value has a category which describes how that value can be used.
-    // This is distinct from the notion of a type, as the category is always
-    // implicit and never composes.
-    //
-    // An lvalue is a named quantity. The name can be read as `left value`, as
-    // if to say that an lvalue may appear on the left side of an assignment.
-    // However, this does not mean that all lvalues can be assigned to: an
-    // lvalue may still be of an unassignable type, such as a function. These
-    // are always represented in the IR as a pointer to a memory location.
-    //
-    // An rvalue is a pure value. For example, a literal integer is an rvalue.
-    // These are represented as inline values, so they can only be
-    // register-sized.
-    //
-    // An xvalue is an expiring lvalue. That is, it's also represented as
-    // a pointer to a memory location, but unlike an lvalue it is to be
-    // considered movable.
-    enum { lvalue, rvalue, xvalue } category;
-    const local_info* result;
-  };
 
   const ir::data_type& effective_type(const info&);
 
@@ -491,28 +491,27 @@ const ir::data_type& expression_checker::effective_type(const info& info) {
   }
 }
 
-const expression_checker::local_info& expression_checker::add(
-    ir::data_type type, ir::action action) {
+const local_info& expression_checker::add(ir::data_type type,
+                                          ir::action action) {
   const auto id = program.local();
   const auto [i, is_new] = result.locals.emplace(id, std::move(type));
   result.steps.emplace_back(ir::step{id, std::move(action)});
   return *i;
 }
 
-const expression_checker::local_info& expression_checker::add(ir::value value) {
+const local_info& expression_checker::add(ir::value value) {
   const auto location = value.location();
   auto type = type_of(value);
   return add(std::move(type), {location, ir::constant{std::move(value)}});
 }
 
-const expression_checker::local_info& expression_checker::alloc(
-    ir::data_type type) {
+const local_info& expression_checker::alloc(ir::data_type type) {
   return add(type, {type.location(), ir::stack_allocate{}});
 }
 
-const expression_checker::local_info& expression_checker::index(
-    io::location location, const local_info& address,
-    const local_info& offset) {
+const local_info& expression_checker::index(io::location location,
+                                            const local_info& address,
+                                            const local_info& offset) {
   if (offset.second != ir::data_type{{}, ir::builtin_type::int32_type}) {
     io::fatal_message{location, io::message::error}
         << "index offset must be integral.";
@@ -532,8 +531,7 @@ const expression_checker::local_info& expression_checker::index(
              {location, ir::index{address.first, offset.first}});
 }
 
-const expression_checker::local_info& expression_checker::ensure_loaded(
-    const info& x) {
+const local_info& expression_checker::ensure_loaded(const info& x) {
   switch (x.category) {
     case info::rvalue:
       return *x.result;
@@ -544,8 +542,7 @@ const expression_checker::local_info& expression_checker::ensure_loaded(
   }
 }
 
-const expression_checker::local_info& expression_checker::load(
-    const local_info& address) {
+const local_info& expression_checker::load(const local_info& address) {
   const auto& [a, type] = address;
   if (auto* p = type.get<ir::pointer_type>()) {
     return add(p->pointee, {type.location(), ir::load{a}});
@@ -632,8 +629,8 @@ void expression_checker::construct_into(const local_info& address,
   }
 }
 
-expression_checker::info expression_checker::generate(
-    io::location location, const environment::name_info& info) {
+info expression_checker::generate(io::location location,
+                                  const environment::name_info& info) {
   if (const auto* f = std::get_if<ir::function_type>(&info.type)) {
     const auto& result =
         add({location, ir::function_pointer{info.symbol, *f}});
@@ -658,15 +655,15 @@ expression_checker::info expression_checker::generate(
   io::fatal_message{location, io::message::error} << "unimplemented name type.";
 }
 
-expression_checker::info expression_checker::generate(
-    io::location location, const ast::identifier& i) {
+info expression_checker::generate(io::location location,
+                                  const ast::identifier& i) {
   // In the IR, we will represent variable references as pointers with an lvalue
   // category.
   return generate(location, environment.lookup(location, i.value));
 }
 
-expression_checker::info expression_checker::generate(
-    io::location location, const ast::literal_integer& i) {
+info expression_checker::generate(io::location location,
+                                  const ast::literal_integer& i) {
   if (i.value > std::numeric_limits<std::int32_t>::max()) {
     io::fatal_message{location, io::message::error}
         << "integer literal exceeds the maximum allowed value for int32.";
@@ -675,23 +672,23 @@ expression_checker::info expression_checker::generate(
   return {.category = info::rvalue, .result = &result};
 }
 
-expression_checker::info expression_checker::generate(
-    io::location location, const ast::literal_string&) {
+info expression_checker::generate(io::location location,
+                                  const ast::literal_string&) {
   // TODO: Implement string literals.
   io::fatal_message{location, io::message::error}
       << "string literals are unimplemented.";
 }
 
-expression_checker::info expression_checker::generate(
-    io::location location, const ast::literal_aggregate& a,
-    const ir::array_type& array) {
+info expression_checker::generate(io::location location,
+                                  const ast::literal_aggregate& a,
+                                  const ir::array_type& array) {
   const auto& mem = alloc({location, array});
   generate_into(mem, location, a, array);
   return {.category = info::xvalue, .result = &mem};
 }
 
-expression_checker::info expression_checker::generate(
-    io::location location, const ast::literal_aggregate& a) {
+info expression_checker::generate(io::location location,
+                                  const ast::literal_aggregate& a) {
   const auto type = environment.check_type(a.type);
   if (const auto* array = type.get<ir::array_type>()) {
     return generate(location, a, *array);
@@ -701,16 +698,15 @@ expression_checker::info expression_checker::generate(
       << "unimplemented aggregate literal type.";
 }
 
-expression_checker::info expression_checker::generate(
-    io::location location, const ast::array_type&) {
+info expression_checker::generate(io::location location,
+                                  const ast::array_type&) {
   io::message{location, io::message::error} << "unexpected type in expression.";
   io::fatal_message{location, io::message::note}
       << "types may only appear in expressions as part of aggregate "
          "initializers, which have the syntax `type{...}`.";
 }
 
-expression_checker::info expression_checker::generate(
-    io::location location, const ast::dot& d) {
+info expression_checker::generate(io::location location, const ast::dot& d) {
   // Normally, `<expr>.bar` is indirection into a class. As a special case,
   // `foo.bar` may instead mean accessing the name `bar` from the imported
   // module `some.path.foo`.
@@ -725,8 +721,8 @@ expression_checker::info expression_checker::generate(
       << "object access is unimplemented.";
 }
 
-expression_checker::info expression_checker::generate(
-    io::location location, const ast::dereference& d) {
+info expression_checker::generate(io::location location,
+                                  const ast::dereference& d) {
   auto inner = generate(d.from);
   if (auto* p = inner.result->second.get<ir::pointer_type>()) {
     return {.category = info::lvalue, .result = inner.result};
@@ -737,8 +733,8 @@ expression_checker::info expression_checker::generate(
   }
 }
 
-expression_checker::info expression_checker::generate(
-    io::location location, const ast::address_of& a) {
+info expression_checker::generate(io::location location,
+                                  const ast::address_of& a) {
   auto inner = generate(a.inner);
   if (inner.category != info::lvalue) {
     io::fatal_message{location, io::message::error}
@@ -747,8 +743,7 @@ expression_checker::info expression_checker::generate(
   return {.category = info::rvalue, .result = inner.result};
 }
 
-expression_checker::info expression_checker::generate(io::location location,
-                                                      const ast::index& i) {
+info expression_checker::generate(io::location location, const ast::index& i) {
   const auto& result =
       index(location, *generate(i.from).result, *generate(i.index).result);
   return {.category = info::lvalue, .result = &result};
@@ -757,8 +752,7 @@ expression_checker::info expression_checker::generate(io::location location,
 // TODO: There is a load of duplication for the functions handling different
 // arithmetic operators. Figure out a nice way of removing all the duplication.
 
-expression_checker::info expression_checker::generate(
-    io::location location, const ast::negate& n) {
+info expression_checker::generate(io::location location, const ast::negate& n) {
   const auto& l = ensure_loaded(generate(n.inner));
   if (!is<ir::int32_type>(l.second)) {
     io::fatal_message{location, io::message::error}
@@ -769,8 +763,7 @@ expression_checker::info expression_checker::generate(
   return {.category = info::rvalue, .result = &out};
 }
 
-expression_checker::info expression_checker::generate(
-    io::location location, const ast::add& a) {
+info expression_checker::generate(io::location location, const ast::add& a) {
   const auto& l = ensure_loaded(generate(a.left));
   const auto& r = ensure_loaded(generate(a.right));
   // TODO: Implement pointer arithmetic.
@@ -787,8 +780,8 @@ expression_checker::info expression_checker::generate(
   return {.category = info::rvalue, .result = &out};
 }
 
-expression_checker::info expression_checker::generate(
-    io::location location, const ast::subtract& s) {
+info expression_checker::generate(io::location location,
+                                  const ast::subtract& s) {
   const auto& l = ensure_loaded(generate(s.left));
   const auto& r = ensure_loaded(generate(s.right));
   // TODO: Implement pointer arithmetic.
@@ -805,8 +798,8 @@ expression_checker::info expression_checker::generate(
   return {.category = info::rvalue, .result = &out};
 }
 
-expression_checker::info expression_checker::generate(
-    io::location location, const ast::multiply& m) {
+info expression_checker::generate(io::location location,
+                                  const ast::multiply& m) {
   const auto& l = ensure_loaded(generate(m.left));
   const auto& r = ensure_loaded(generate(m.right));
   if (!is<ir::int32_type>(l.second)) {
@@ -822,8 +815,7 @@ expression_checker::info expression_checker::generate(
   return {.category = info::rvalue, .result = &out};
 }
 
-expression_checker::info expression_checker::generate(
-    io::location location, const ast::divide& d) {
+info expression_checker::generate(io::location location, const ast::divide& d) {
   const auto& l = ensure_loaded(generate(d.left));
   const auto& r = ensure_loaded(generate(d.right));
   if (!is<ir::int32_type>(l.second)) {
@@ -839,8 +831,7 @@ expression_checker::info expression_checker::generate(
   return {.category = info::rvalue, .result = &out};
 }
 
-expression_checker::info expression_checker::generate(
-    io::location location, const ast::modulo& m) {
+info expression_checker::generate(io::location location, const ast::modulo& m) {
   const auto& l = ensure_loaded(generate(m.left));
   const auto& r = ensure_loaded(generate(m.right));
   if (!is<ir::int32_type>(l.second)) {
@@ -856,8 +847,8 @@ expression_checker::info expression_checker::generate(
   return {.category = info::rvalue, .result = &out};
 }
 
-expression_checker::info expression_checker::generate(
-    io::location location, const ast::compare_eq& c) {
+info expression_checker::generate(io::location location,
+                                  const ast::compare_eq& c) {
   const info l = generate(c.left);
   const info r = generate(c.right);
   const auto& ltype = effective_type(l);
@@ -885,8 +876,8 @@ expression_checker::info expression_checker::generate(
       << "comparison between objects of type " << ltype << " is unimplemented.";
 }
 
-expression_checker::info expression_checker::generate(
-    io::location location, const ast::compare_ne& c) {
+info expression_checker::generate(io::location location,
+                                  const ast::compare_ne& c) {
   const info l = generate(c.left);
   const info r = generate(c.right);
   const auto& ltype = effective_type(l);
@@ -914,8 +905,8 @@ expression_checker::info expression_checker::generate(
       << "comparison between objects of type " << ltype << " is unimplemented.";
 }
 
-expression_checker::info expression_checker::generate(
-    io::location location, const ast::compare_lt& c) {
+info expression_checker::generate(io::location location,
+                                  const ast::compare_lt& c) {
   const info l = generate(c.left);
   const info r = generate(c.right);
   const auto& ltype = effective_type(l);
@@ -943,8 +934,8 @@ expression_checker::info expression_checker::generate(
       << "comparison between objects of type " << ltype << " is unimplemented.";
 }
 
-expression_checker::info expression_checker::generate(
-    io::location location, const ast::compare_le& c) {
+info expression_checker::generate(io::location location,
+                                  const ast::compare_le& c) {
   const info l = generate(c.left);
   const info r = generate(c.right);
   const auto& ltype = effective_type(l);
@@ -972,8 +963,8 @@ expression_checker::info expression_checker::generate(
       << "comparison between objects of type " << ltype << " is unimplemented.";
 }
 
-expression_checker::info expression_checker::generate(
-    io::location location, const ast::compare_gt& c) {
+info expression_checker::generate(io::location location,
+                                  const ast::compare_gt& c) {
   const info l = generate(c.left);
   const info r = generate(c.right);
   const auto& ltype = effective_type(l);
@@ -1001,8 +992,8 @@ expression_checker::info expression_checker::generate(
       << "comparison between objects of type " << ltype << " is unimplemented.";
 }
 
-expression_checker::info expression_checker::generate(
-    io::location location, const ast::compare_ge& c) {
+info expression_checker::generate(io::location location,
+                                  const ast::compare_ge& c) {
   const info l = generate(c.left);
   const info r = generate(c.right);
   const auto& ltype = effective_type(l);
@@ -1030,22 +1021,22 @@ expression_checker::info expression_checker::generate(
       << "comparison between objects of type " << ltype << " is unimplemented.";
 }
 
-expression_checker::info expression_checker::generate(
-    io::location location, const ast::logical_and& a) {
+info expression_checker::generate(io::location location,
+                                  const ast::logical_and& a) {
   const auto& mem = alloc({location, ir::bool_type});
   generate_into(mem, location, a);
   return {.category = info::lvalue, .result = &mem};
 }
 
-expression_checker::info expression_checker::generate(
-    io::location location, const ast::logical_or& o) {
+info expression_checker::generate(io::location location,
+                                  const ast::logical_or& o) {
   const auto& mem = alloc({location, ir::bool_type});
   generate_into(mem, location, o);
   return {.category = info::xvalue, .result = &mem};
 }
 
-expression_checker::info expression_checker::generate(
-    io::location location, const ast::logical_not& n) {
+info expression_checker::generate(io::location location,
+                                  const ast::logical_not& n) {
   const auto inner = generate(n.inner);
   if (!is<ir::bool_type>(inner.result->second)) {
     io::fatal_message{location, io::message::error}
@@ -1057,8 +1048,7 @@ expression_checker::info expression_checker::generate(
   return {.category = info::rvalue, .result = &result};
 }
 
-expression_checker::info expression_checker::generate(
-    io::location location, const ast::call& c) {
+info expression_checker::generate(io::location location, const ast::call& c) {
   generate(c.callee);
   for (const auto& argument : c.arguments) generate(argument);
   // TODO: Implement function calls. This will require deciding how to pass each
@@ -1068,8 +1058,7 @@ expression_checker::info expression_checker::generate(
       << "function calls are unimplemented.";
 }
 
-expression_checker::info expression_checker::generate(
-    const ast::expression& e) {
+info expression_checker::generate(const ast::expression& e) {
   return e.visit([&](const auto& x) { return generate(e.location(), x); });
 }
 
