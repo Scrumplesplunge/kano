@@ -256,16 +256,16 @@ struct function_checker : function_builder<ir::function> {
 
   void check(io::location, const ast::function_definition&);
 
-  void check_statement(io::location, const ast::import_statement&);
-  void check_statement(io::location, const ast::variable_definition&);
-  void check_statement(io::location, const ast::alias_definition&);
-  void check_statement(io::location, const ast::function_definition&);
-  void check_statement(io::location, const ast::class_definition&);
-  void check_statement(io::location, const ast::definition&);
-  void check_statement(io::location, const ast::exported_definition&);
-  void check_statement(io::location, const ast::assignment&);
+  void generate(io::location, const ast::import_statement&);
+  void generate(io::location, const ast::variable_definition&);
+  void generate(io::location, const ast::alias_definition&);
+  void generate(io::location, const ast::function_definition&);
+  void generate(io::location, const ast::class_definition&);
+  void generate(io::location, const ast::definition&);
+  void generate(io::location, const ast::exported_definition&);
+  void generate(io::location, const ast::assignment&);
   template <typename T>
-  void check_statement(io::location l, const T&) {
+  void generate(io::location l, const T&) {
     io::fatal_message{l, io::message::error}
         << __PRETTY_FUNCTION__ << ": unimplemented.";
   }
@@ -1197,12 +1197,11 @@ void function_checker::check(io::location l,
   }
   for (const auto& statement : f.body.statements) {
     statement.visit(
-        [&](const auto& x) { check_statement(statement.location(), x); });
+        [&](const auto& x) { generate(statement.location(), x); });
   }
 }
 
-void function_checker::check_statement(io::location l,
-                                       const ast::import_statement&) {
+void function_checker::generate(io::location l, const ast::import_statement&) {
   io::fatal_message{l, io::message::error}
       << "import statements may not appear inside functions.";
 }
@@ -1210,8 +1209,8 @@ void function_checker::check_statement(io::location l,
 // TODO: Some of these functions look very similar to the function in
 // module_checker, maybe they can be merged together somehow.
 
-void function_checker::check_statement(io::location l,
-                                       const ast::variable_definition& v) {
+void function_checker::generate(io::location l,
+                                const ast::variable_definition& v) {
   const auto type = environment.check_type(v.type);
   const auto& address = alloc(type);
   environment.define(l, v.id.value, local{&address, type});
@@ -1221,38 +1220,35 @@ void function_checker::check_statement(io::location l,
   }
 }
 
-void function_checker::check_statement(io::location l,
-                                       const ast::alias_definition& a) {
+void function_checker::generate(io::location l,
+                                const ast::alias_definition& a) {
   environment.define(l, a.id.value, type_type{environment.check_type(a.type)});
 }
 
-void function_checker::check_statement(io::location l,
-                                       const ast::function_definition&) {
+void function_checker::generate(io::location l,
+                                const ast::function_definition&) {
   io::fatal_message{l, io::message::error}
       << "function definitions may not appear inside other functions.";
 }
 
-void function_checker::check_statement(io::location l,
-                                       const ast::class_definition&) {
+void function_checker::generate(io::location l, const ast::class_definition&) {
   // TODO: There's no real reason to forbid local classes, so this should be
   // implemented.
   io::fatal_message{l, io::message::error}
       << "class definitions may not appear inside other functions.";
 }
 
-void function_checker::check_statement(io::location l,
-                                       const ast::definition& d) {
-  d.visit([&](const auto& x) { check_statement(l, x); });
+void function_checker::generate(io::location l, const ast::definition& d) {
+  d.visit([&](const auto& x) { generate(l, x); });
 }
 
-void function_checker::check_statement(io::location l,
-                                       const ast::exported_definition&) {
+void function_checker::generate(io::location l,
+                                const ast::exported_definition&) {
   io::fatal_message{l, io::message::error}
       << "exports may not appear inside functions.";
 }
 
-void function_checker::check_statement(io::location l,
-                                       const ast::assignment& a) {
+void function_checker::generate(io::location l, const ast::assignment& a) {
   expression_checker checker{{program, result}, environment};
   const info lhs = checker.generate(a.destination);
   if (lhs.category != info::lvalue) {
