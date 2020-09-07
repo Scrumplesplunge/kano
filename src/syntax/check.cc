@@ -262,6 +262,11 @@ struct function_checker : function_builder<ir::function> {
   void check_statement(io::location, const ast::class_definition&);
   void check_statement(io::location, const ast::definition&);
   void check_statement(io::location, const ast::exported_definition&);
+  template <typename T>
+  void check_statement(io::location l, const T&) {
+    io::fatal_message{l, io::message::error}
+        << __PRETTY_FUNCTION__ << ": unimplemented.";
+  }
 };
 
 const environment::name_info& environment::lookup(io::location location,
@@ -1175,12 +1180,16 @@ void expression_checker::generate_into(const local_info& address,
 }
 
 void function_checker::check(io::location l,
-                             const ast::function_definition&) {
+                             const ast::function_definition& f) {
   // TODO: Implement functions with actual inputs and outputs.
   if (!is<ir::void_type>(type.return_type) || !type.parameters.empty()) {
     io::fatal_message{l, io::message::error}
         << "functions with parameters or with a non-void return type are "
            "unimplemented.";
+  }
+  for (const auto& statement : f.body.statements) {
+    statement.visit(
+        [&](const auto& x) { check_statement(statement.location(), x); });
   }
 }
 
