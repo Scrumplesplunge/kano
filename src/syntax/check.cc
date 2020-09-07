@@ -516,7 +516,8 @@ const local_info& function_builder<function>::add(ir::value value) {
 
 template <typename function>
 const local_info& function_builder<function>::alloc(ir::data_type type) {
-  return add(type, {type.location(), ir::stack_allocate{}});
+  return add({type.location(), ir::pointer_type{type}},
+             {type.location(), ir::stack_allocate{}});
 }
 
 template <typename function>
@@ -657,9 +658,7 @@ info expression_checker::generate(io::location location,
     return {.category = info::lvalue, .result = &result};
   }
   if (const auto* l = std::get_if<local>(&info.type)) {
-    // TODO: Implement code generation for accessing local variables.
-    io::fatal_message{location, io::message::error}
-        << "local variables are unimplemented.";
+    return {.category = info::lvalue, .result = l->address};
   }
   if (const auto* t = std::get_if<type_type>(&info.type)) {
     io::message{location, io::message::error}
