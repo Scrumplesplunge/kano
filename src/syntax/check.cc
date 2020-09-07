@@ -245,6 +245,15 @@ struct module_checker {
   const environment::name_info& check(const ast::exported_definition&);
 };
 
+struct function_checker {
+  module_checker& module;
+  const ir::function_type& type;
+  ir::function body = {};
+  environment environment = {&module.environment};
+
+  void check(io::location, const ast::function_definition&);
+};
+
 const environment::name_info& environment::lookup(io::location location,
                                                   std::string_view name) const {
   auto i = names.find(name);
@@ -380,17 +389,13 @@ const environment::name_info& module_checker::check(
     // TODO: Check that parameter names are not duplicated.
     parameters.push_back(environment.check_type(parameter.type));
   }
-  // TODO: Implement functions with actual inputs and outputs.
-  if (!is<ir::void_type>(return_type) || !parameters.empty()) {
-    io::fatal_message{l, io::message::error}
-        << "functions with parameters or with a non-void return type are "
-           "unimplemented.";
-  }
-  // TODO: Check the function body.
-  return environment.define(
+  const auto& info = environment.define(
       l, f.id.value,
       ir::function_type{std::move(return_type), std::move(parameters)},
       program.symbol());
+  function_checker checker{*this, std::get<ir::function_type>(info.type)};
+  checker.check(l, f);
+  return info;
 }
 
 const environment::name_info& module_checker::check(
@@ -1163,6 +1168,16 @@ void expression_checker::generate_into(const local_info& address,
                                        const ast::expression& e) {
   return e.visit(
       [&](const auto& x) { generate_into(address, e.location(), x); });
+}
+
+void function_checker::check(io::location l,
+                             const ast::function_definition&) {
+  // TODO: Implement functions with actual inputs and outputs.
+  if (!is<ir::void_type>(type.return_type) || !type.parameters.empty()) {
+    io::fatal_message{l, io::message::error}
+        << "functions with parameters or with a non-void return type are "
+           "unimplemented.";
+  }
 }
 
 export void check(const char* filename) {
