@@ -231,6 +231,10 @@ struct compare_ge {
   local left, right;
 };
 
+struct jump {
+  symbol target;
+};
+
 struct conditional_jump {
   local condition;
   symbol target;
@@ -250,7 +254,7 @@ struct index {
 using action = node<constant, stack_allocate, load, store, call, negate, add,
                     subtract, multiply, divide, modulo, compare_eq, compare_ne,
                     compare_lt, compare_le, compare_gt, compare_ge,
-                    conditional_jump, logical_not, index>;
+                    jump, conditional_jump, logical_not, index>;
 
 struct step {
   local destination;

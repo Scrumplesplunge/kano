@@ -114,6 +114,7 @@ struct function_builder {
   const local_info& ensure_loaded(const info&);
   const local_info& load(const local_info&);
   void label(ir::symbol);
+  void jump(io::location, ir::symbol);
   void conditional_jump(io::location, const local_info&, ir::symbol);
   void construct_into(const local_info&, const info&);
 };
@@ -576,6 +577,12 @@ template <typename function>
 void function_builder<function>::label(ir::symbol s) {
   auto [i, is_new] = result.labels.emplace(s, result.steps.size());
   assert(is_new);
+}
+
+template <typename function>
+void function_builder<function>::jump(io::location location,
+                                      ir::symbol target) {
+  add({location, ir::void_type}, {location, ir::jump{target}});
 }
 
 template <typename function>
