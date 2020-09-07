@@ -1196,10 +1196,7 @@ void function_checker::check(io::location l,
         << "functions with parameters or with a non-void return type are "
            "unimplemented.";
   }
-  for (const auto& statement : f.body.statements) {
-    statement.visit(
-        [&](const auto& x) { generate(statement.location(), x); });
-  }
+  for (const auto& statement : f.body.statements) generate(statement);
 }
 
 void function_checker::generate(io::location l, const ast::import_statement&) {
