@@ -380,6 +380,12 @@ const environment::name_info& module_checker::check(
     // TODO: Check that parameter names are not duplicated.
     parameters.push_back(environment.check_type(parameter.type));
   }
+  // TODO: Implement functions with actual inputs and outputs.
+  if (!is<ir::void_type>(return_type) || !parameters.empty()) {
+    io::fatal_message{l, io::message::error}
+        << "functions with parameters or with a non-void return type are "
+           "unimplemented.";
+  }
   // TODO: Check the function body.
   return environment.define(
       l, f.id.value,
