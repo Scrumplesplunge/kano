@@ -23,15 +23,22 @@ constexpr bool is(const ir::data_type& x) {
 
 struct environment;
 
+struct function {
+  ir::symbol symbol;
+  ir::function_type type;
+};
+
 struct module_type {
   const environment* exports;
 };
 
 struct global {
+  ir::symbol symbol;
   ir::data_type type;
 };
 
 struct local {
+  ir::local address;
   ir::data_type type;
 };
 
@@ -41,8 +48,7 @@ struct type_type {
   ir::data_type type;
 };
 
-using name_type =
-    std::variant<ir::function_type, module_type, global, local, type_type>;
+using name_type = std::variant<function, module_type, global, local, type_type>;
 
 struct checker;
 struct module_checker;
@@ -53,7 +59,6 @@ struct environment {
   environment* parent = nullptr;
   struct name_info {
     io::location location;
-    ir::symbol symbol;
     std::string name;
     name_type type;
   };
@@ -65,7 +70,7 @@ struct environment {
 
   // Define a name within the current scope.
   const name_info& define(io::location location, std::string name,
-                          name_type type, ir::symbol symbol);
+                          name_type type);
 
   ir::data_type check_type(const ast::expression&) const;
   const environment::name_info& resolve(const ast::expression&) const;
@@ -191,19 +196,9 @@ struct checker {
   // Map from symbolic type names to the table of operators for the type.
   std::map<ir::symbol, type_info> types = {};
   environment builtins = {
-      .names =
-          {
-              {"bool",
-               {{}, ir::builtin_bool, "bool", type_type{{{}, ir::bool_type}}}},
-              {"int32",
-               {{},
-                ir::builtin_int32,
-                "int32",
-                type_type{{{}, ir::int32_type}}}},
-              {"void",
-               {{}, ir::builtin_void, "void", type_type{{{}, ir::void_type}}}},
-          },
-  };
+      .names = {{"bool", {{}, "bool", type_type{{{}, ir::bool_type}}}},
+                {"int32", {{}, "int32", type_type{{{}, ir::int32_type}}}},
+                {"void", {{}, "void", type_type{{{}, ir::void_type}}}}}};
 
   // Generate a new unique symbol for some exported artefact.
   ir::symbol symbol();
@@ -280,10 +275,8 @@ const environment::name_info& environment::lookup(io::location location,
 
 const environment::name_info& environment::define(io::location l,
                                                   std::string id,
-                                                  name_type type,
-                                                  ir::symbol symbol) {
-  auto [i, is_new] =
-      names.emplace(id, name_info{l, symbol, id, std::move(type)});
+                                                  name_type type) {
+  auto [i, is_new] = names.emplace(id, name_info{l, id, std::move(type)});
   if (!is_new) {
     io::message{l, io::message::error} << "redeclaration of variable "
                                        << std::quoted(id) << ".";
@@ -373,17 +366,16 @@ void module_checker::check(io::location l, const ast::import_statement& i) {
     // to display the cycle.
     io::fatal_message{l, io::message::error} << "cyclic import.";
   }
-  environment.define(l, i.path.back(), module_type{&m.exports},
-                     program.symbol());
+  environment.define(l, i.path.back(), module_type{&m.exports});
 }
 
 const environment::name_info& module_checker::check(
     io::location l, const ast::variable_definition& v) {
   const auto type = environment.check_type(v.type);
-  const auto& info =
-      environment.define(l, v.id.value, global{type}, program.symbol());
+  const ir::symbol id = program.symbol();
+  const auto& info = environment.define(l, v.id.value, global{id, type});
   if (v.initializer) {
-    const auto& lhs = initialization.add({l, ir::pointer{info.symbol, type}});
+    const auto& lhs = initialization.add({l, ir::pointer{id, type}});
     initialization.generate_into(lhs, *v.initializer);
   }
   return info;
@@ -392,8 +384,7 @@ const environment::name_info& module_checker::check(
 const environment::name_info& module_checker::check(io::location l,
                                             const ast::alias_definition& a) {
   return environment.define(l, a.id.value,
-                            type_type{environment.check_type(a.type)},
-                            program.symbol());
+                            type_type{environment.check_type(a.type)});
 }
 
 const environment::name_info& module_checker::check(
@@ -406,10 +397,10 @@ const environment::name_info& module_checker::check(
   }
   const auto& info = environment.define(
       l, f.id.value,
-      ir::function_type{std::move(return_type), std::move(parameters)},
-      program.symbol());
+      function{program.symbol(),
+               {std::move(return_type), std::move(parameters)}});
   function_checker checker{
-      {program, {}}, *this, std::get<ir::function_type>(info.type)};
+      {program, {}}, *this, std::get<function>(info.type).type};
   checker.check(l, f);
   return info;
 }
@@ -419,8 +410,8 @@ const environment::name_info& module_checker::check(
   // TODO: Put the body of the class aside for subsequent checking after all
   // top-level declarations have been handled.
   const auto symbol = program.symbol();
-  return environment.define(
-      l, c.id.value, type_type{{l, ir::user_defined_type{symbol}}}, symbol);
+  return environment.define(l, c.id.value,
+                            type_type{{l, ir::user_defined_type{symbol}}});
 }
 
 const environment::name_info& module_checker::check(const ast::definition& e) {
@@ -656,13 +647,13 @@ void function_builder<function>::construct_into(const local_info& address,
 
 info expression_checker::generate(io::location location,
                                   const environment::name_info& info) {
-  if (const auto* f = std::get_if<ir::function_type>(&info.type)) {
+  if (const auto* f = std::get_if<function>(&info.type)) {
     const auto& result =
-        add({location, ir::function_pointer{info.symbol, *f}});
+        add({location, ir::function_pointer{f->symbol, f->type}});
     return {.category = info::lvalue, .result = &result};
   }
   if (const auto* g = std::get_if<global>(&info.type)) {
-    const auto& result = add({location, ir::pointer{info.symbol, g->type}});
+    const auto& result = add({location, ir::pointer{g->symbol, g->type}});
     return {.category = info::lvalue, .result = &result};
   }
   if (const auto* l = std::get_if<local>(&info.type)) {
@@ -1206,20 +1197,17 @@ void function_checker::check_statement(io::location l,
 void function_checker::check_statement(io::location l,
                                        const ast::variable_definition& v) {
   const auto type = environment.check_type(v.type);
-  const auto& info =
-      environment.define(l, v.id.value, local{type}, module.program.symbol());
-  const auto& lhs = alloc(type);
-  locals.emplace(info.symbol, &lhs);
+  const auto& address = alloc(type);
+  environment.define(l, v.id.value, local{address.first, type});
   if (v.initializer) {
     expression_checker{{program, result}, environment}.generate_into(
-        lhs, *v.initializer);
+        address, *v.initializer);
   }
 }
 
 void function_checker::check_statement(io::location l,
                                        const ast::alias_definition& a) {
-  environment.define(l, a.id.value, type_type{environment.check_type(a.type)},
-                     program.symbol());
+  environment.define(l, a.id.value, type_type{environment.check_type(a.type)});
 }
 
 void function_checker::check_statement(io::location l,
