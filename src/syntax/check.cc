@@ -265,6 +265,7 @@ struct function_checker : function_builder<ir::function> {
   void generate(io::location, const ast::exported_definition&);
   void generate(io::location, const ast::assignment&);
   void generate(io::location, const ast::if_statement&);
+  void generate(io::location, const ast::while_statement&);
   template <typename T>
   void generate(io::location l, const T&) {
     io::fatal_message{l, io::message::error}
@@ -1275,6 +1276,18 @@ void function_checker::generate(io::location l, const ast::if_statement& i) {
     generate(i.then_branch);
   }
   label(end);
+}
+
+void function_checker::generate(io::location l, const ast::while_statement& w) {
+  const ir::symbol while_condition = program.symbol();
+  jump(l, while_condition);
+  const ir::symbol while_body = program.symbol();
+  label(while_body);
+  generate(w.body);
+  label(while_condition);
+  expression_checker checker{{program, result}, environment};
+  const auto& condition = ensure_loaded(checker.generate(w.condition));
+  conditional_jump(l, condition, while_body);
 }
 
 void function_checker::generate(const ast::statement& s) {
