@@ -95,12 +95,10 @@ struct info {
   const local_info* result;
 };
 
-struct expression_checker {
+template <typename function>
+struct function_builder {
   checker& program;
-  const environment& environment;
-  ir::function& result;
-
-  const ir::data_type& effective_type(const info&);
+  function result;
 
   const local_info& add(ir::data_type, ir::action);
   const local_info& add(ir::value);
@@ -113,6 +111,12 @@ struct expression_checker {
   void label(ir::symbol);
   void conditional_jump(io::location, const local_info&, ir::symbol);
   void construct_into(const local_info&, const info&);
+};
+
+struct expression_checker : function_builder<ir::function&> {
+  const environment& environment;
+
+  const ir::data_type& effective_type(const info&);
 
   info generate(io::location, const environment::name_info&);
   info generate(io::location, const ast::identifier&);
@@ -219,8 +223,8 @@ struct module_checker {
   const std::filesystem::path& path;
   module_data& module;
   environment environment = {&program.builtins};
-  expression_checker initialization = {program, environment,
-                                       program.initialization};
+  expression_checker initialization = {{program, program.initialization},
+                                       environment};
 
   // Returns a visually pleasing version of the filename for use in messages.
   std::string name() const;
@@ -491,27 +495,31 @@ const ir::data_type& expression_checker::effective_type(const info& info) {
   }
 }
 
-const local_info& expression_checker::add(ir::data_type type,
-                                          ir::action action) {
+template <typename function>
+const local_info& function_builder<function>::add(ir::data_type type,
+                                                  ir::action action) {
   const auto id = program.local();
   const auto [i, is_new] = result.locals.emplace(id, std::move(type));
   result.steps.emplace_back(ir::step{id, std::move(action)});
   return *i;
 }
 
-const local_info& expression_checker::add(ir::value value) {
+template <typename function>
+const local_info& function_builder<function>::add(ir::value value) {
   const auto location = value.location();
   auto type = type_of(value);
   return add(std::move(type), {location, ir::constant{std::move(value)}});
 }
 
-const local_info& expression_checker::alloc(ir::data_type type) {
+template <typename function>
+const local_info& function_builder<function>::alloc(ir::data_type type) {
   return add(type, {type.location(), ir::stack_allocate{}});
 }
 
-const local_info& expression_checker::index(io::location location,
-                                            const local_info& address,
-                                            const local_info& offset) {
+template <typename function>
+const local_info& function_builder<function>::index(io::location location,
+                                                    const local_info& address,
+                                                    const local_info& offset) {
   if (offset.second != ir::data_type{{}, ir::builtin_type::int32_type}) {
     io::fatal_message{location, io::message::error}
         << "index offset must be integral.";
@@ -531,7 +539,8 @@ const local_info& expression_checker::index(io::location location,
              {location, ir::index{address.first, offset.first}});
 }
 
-const local_info& expression_checker::ensure_loaded(const info& x) {
+template <typename function>
+const local_info& function_builder<function>::ensure_loaded(const info& x) {
   switch (x.category) {
     case info::rvalue:
       return *x.result;
@@ -542,7 +551,8 @@ const local_info& expression_checker::ensure_loaded(const info& x) {
   }
 }
 
-const local_info& expression_checker::load(const local_info& address) {
+template <typename function>
+const local_info& function_builder<function>::load(const local_info& address) {
   const auto& [a, type] = address;
   if (auto* p = type.get<ir::pointer_type>()) {
     return add(p->pointee, {type.location(), ir::load{a}});
@@ -552,21 +562,24 @@ const local_info& expression_checker::load(const local_info& address) {
   }
 }
 
-void expression_checker::label(ir::symbol s) {
+template <typename function>
+void function_builder<function>::label(ir::symbol s) {
   auto [i, is_new] = result.labels.emplace(s, result.steps.size());
   assert(is_new);
 }
 
-void expression_checker::conditional_jump(io::location location,
-                                          const local_info& condition,
-                                          ir::symbol target) {
+template <typename function>
+void function_builder<function>::conditional_jump(io::location location,
+                                                  const local_info& condition,
+                                                  ir::symbol target) {
   assert(is<ir::bool_type>(condition.second));
   add({location, ir::void_type},
       {location, ir::conditional_jump{condition.first, target}});
 }
 
-void expression_checker::construct_into(const local_info& address,
-                                        const info& value) {
+template <typename function>
+void function_builder<function>::construct_into(const local_info& address,
+                                                const info& value) {
   const auto& [destination, destination_type] = address;
   auto* const p = destination_type.get<ir::pointer_type>();
   if (!p) {
