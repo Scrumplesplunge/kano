@@ -248,7 +248,6 @@ struct module_checker {
 struct function_checker : function_builder<ir::function> {
   module_checker& module;
   const ir::function_type& type;
-  environment environment = {&module.environment};
   // TODO: Find a nicer way of mapping these. One option is to merge symbol and
   // local into a single type that uniquely identifies "things", but possibly
   // that is more bug-prone.
@@ -256,22 +255,22 @@ struct function_checker : function_builder<ir::function> {
 
   void check(io::location, const ast::function_definition&);
 
-  void generate(io::location, const ast::import_statement&);
-  void generate(io::location, const ast::variable_definition&);
-  void generate(io::location, const ast::alias_definition&);
-  void generate(io::location, const ast::function_definition&);
-  void generate(io::location, const ast::class_definition&);
-  void generate(io::location, const ast::definition&);
-  void generate(io::location, const ast::exported_definition&);
-  void generate(io::location, const ast::assignment&);
-  void generate(io::location, const ast::if_statement&);
-  void generate(io::location, const ast::while_statement&);
+  void generate(environment&, io::location, const ast::import_statement&);
+  void generate(environment&, io::location, const ast::variable_definition&);
+  void generate(environment&, io::location, const ast::alias_definition&);
+  void generate(environment&, io::location, const ast::function_definition&);
+  void generate(environment&, io::location, const ast::class_definition&);
+  void generate(environment&, io::location, const ast::definition&);
+  void generate(environment&, io::location, const ast::exported_definition&);
+  void generate(environment&, io::location, const ast::assignment&);
+  void generate(environment&, io::location, const ast::if_statement&);
+  void generate(environment&, io::location, const ast::while_statement&);
   template <typename T>
-  void generate(io::location l, const T&) {
+  void generate(environment&, io::location l, const T&) {
     io::fatal_message{l, io::message::error}
         << __PRETTY_FUNCTION__ << ": unimplemented.";
   }
-  void generate(const ast::statement&);
+  void generate(environment&, const ast::statement&);
 };
 
 const environment::name_info& environment::lookup(io::location location,
@@ -1192,16 +1191,20 @@ void expression_checker::generate_into(const local_info& address,
 
 void function_checker::check(io::location l,
                              const ast::function_definition& f) {
+  environment environment{&module.environment};
   // TODO: Implement functions with actual inputs and outputs.
   if (!is<ir::void_type>(type.return_type) || !type.parameters.empty()) {
     io::fatal_message{l, io::message::error}
         << "functions with parameters or with a non-void return type are "
            "unimplemented.";
   }
-  for (const auto& statement : f.body.statements) generate(statement);
+  for (const auto& statement : f.body.statements) {
+    generate(environment, statement);
+  }
 }
 
-void function_checker::generate(io::location l, const ast::import_statement&) {
+void function_checker::generate(environment&, io::location l,
+                                const ast::import_statement&) {
   io::fatal_message{l, io::message::error}
       << "import statements may not appear inside functions.";
 }
@@ -1209,7 +1212,7 @@ void function_checker::generate(io::location l, const ast::import_statement&) {
 // TODO: Some of these functions look very similar to the function in
 // module_checker, maybe they can be merged together somehow.
 
-void function_checker::generate(io::location l,
+void function_checker::generate(environment& environment, io::location l,
                                 const ast::variable_definition& v) {
   const auto type = environment.check_type(v.type);
   const auto& address = alloc(type);
@@ -1220,35 +1223,38 @@ void function_checker::generate(io::location l,
   }
 }
 
-void function_checker::generate(io::location l,
+void function_checker::generate(environment& environment, io::location l,
                                 const ast::alias_definition& a) {
   environment.define(l, a.id.value, type_type{environment.check_type(a.type)});
 }
 
-void function_checker::generate(io::location l,
+void function_checker::generate(environment&, io::location l,
                                 const ast::function_definition&) {
   io::fatal_message{l, io::message::error}
       << "function definitions may not appear inside other functions.";
 }
 
-void function_checker::generate(io::location l, const ast::class_definition&) {
+void function_checker::generate(environment&, io::location l,
+                                const ast::class_definition&) {
   // TODO: There's no real reason to forbid local classes, so this should be
   // implemented.
   io::fatal_message{l, io::message::error}
       << "class definitions may not appear inside other functions.";
 }
 
-void function_checker::generate(io::location l, const ast::definition& d) {
-  d.visit([&](const auto& x) { generate(l, x); });
+void function_checker::generate(environment& environment, io::location l,
+                                const ast::definition& d) {
+  d.visit([&](const auto& x) { generate(environment, l, x); });
 }
 
-void function_checker::generate(io::location l,
+void function_checker::generate(environment&, io::location l,
                                 const ast::exported_definition&) {
   io::fatal_message{l, io::message::error}
       << "exports may not appear inside functions.";
 }
 
-void function_checker::generate(io::location l, const ast::assignment& a) {
+void function_checker::generate(environment& environment, io::location l,
+                                const ast::assignment& a) {
   expression_checker checker{{program, result}, environment};
   const info lhs = checker.generate(a.destination);
   if (lhs.category != info::lvalue) {
@@ -1258,7 +1264,8 @@ void function_checker::generate(io::location l, const ast::assignment& a) {
   checker.generate_into(*lhs.result, a.value);
 }
 
-void function_checker::generate(io::location l, const ast::if_statement& i) {
+void function_checker::generate(environment& environment, io::location l,
+                                const ast::if_statement& i) {
   expression_checker checker{{program, result}, environment};
   const auto& condition = ensure_loaded(checker.generate(i.condition));
   const auto& inverse =
@@ -1267,31 +1274,33 @@ void function_checker::generate(io::location l, const ast::if_statement& i) {
   if (i.else_branch) {
     const ir::symbol else_branch = program.symbol();
     conditional_jump(l, inverse, else_branch);
-    generate(i.then_branch);
+    generate(environment, i.then_branch);
     jump(l, end);
     label(else_branch);
-    generate(*i.else_branch);
+    generate(environment, *i.else_branch);
   } else {
     conditional_jump(l, inverse, end);
-    generate(i.then_branch);
+    generate(environment, i.then_branch);
   }
   label(end);
 }
 
-void function_checker::generate(io::location l, const ast::while_statement& w) {
+void function_checker::generate(environment& environment, io::location l,
+                                const ast::while_statement& w) {
   const ir::symbol while_condition = program.symbol();
   jump(l, while_condition);
   const ir::symbol while_body = program.symbol();
   label(while_body);
-  generate(w.body);
+  generate(environment, w.body);
   label(while_condition);
   expression_checker checker{{program, result}, environment};
   const auto& condition = ensure_loaded(checker.generate(w.condition));
   conditional_jump(l, condition, while_body);
 }
 
-void function_checker::generate(const ast::statement& s) {
-  s.visit([&](const auto& x) { generate(s.location(), x); });
+void function_checker::generate(environment& environment,
+                                const ast::statement& s) {
+  s.visit([&](const auto& x) { generate(environment, s.location(), x); });
 }
 
 export void check(const char* filename) {
