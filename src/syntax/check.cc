@@ -15,6 +15,30 @@ namespace syntax {
 
 namespace ir = ::semantics::ir;
 
+using local_info = std::pair<const ir::local, ir::data_type>;
+
+struct info {
+  // Every value has a category which describes how that value can be used.
+  // This is distinct from the notion of a type, as the category is always
+  // implicit and never composes.
+  //
+  // An lvalue is a named quantity. The name can be read as `left value`, as
+  // if to say that an lvalue may appear on the left side of an assignment.
+  // However, this does not mean that all lvalues can be assigned to: an
+  // lvalue may still be of an unassignable type, such as a function. These
+  // are always represented in the IR as a pointer to a memory location.
+  //
+  // An rvalue is a pure value. For example, a literal integer is an rvalue.
+  // These are represented as inline values, so they can only be
+  // register-sized.
+  //
+  // An xvalue is an expiring lvalue. That is, it's also represented as
+  // a pointer to a memory location, but unlike an lvalue it is to be
+  // considered movable.
+  enum { lvalue, rvalue, xvalue } category;
+  const local_info* result;
+};
+
 template <ir::builtin_type t>
 constexpr bool is(const ir::data_type& x) {
   const auto* b = x.get<ir::builtin_type>();
@@ -38,7 +62,7 @@ struct global {
 };
 
 struct local {
-  ir::local address;
+  const local_info* address;
   ir::data_type type;
 };
 
@@ -74,30 +98,6 @@ struct environment {
 
   ir::data_type check_type(const ast::expression&) const;
   const environment::name_info& resolve(const ast::expression&) const;
-};
-
-using local_info = std::pair<const ir::local, ir::data_type>;
-
-struct info {
-  // Every value has a category which describes how that value can be used.
-  // This is distinct from the notion of a type, as the category is always
-  // implicit and never composes.
-  //
-  // An lvalue is a named quantity. The name can be read as `left value`, as
-  // if to say that an lvalue may appear on the left side of an assignment.
-  // However, this does not mean that all lvalues can be assigned to: an
-  // lvalue may still be of an unassignable type, such as a function. These
-  // are always represented in the IR as a pointer to a memory location.
-  //
-  // An rvalue is a pure value. For example, a literal integer is an rvalue.
-  // These are represented as inline values, so they can only be
-  // register-sized.
-  //
-  // An xvalue is an expiring lvalue. That is, it's also represented as
-  // a pointer to a memory location, but unlike an lvalue it is to be
-  // considered movable.
-  enum { lvalue, rvalue, xvalue } category;
-  const local_info* result;
 };
 
 template <typename function>
@@ -1198,7 +1198,7 @@ void function_checker::check_statement(io::location l,
                                        const ast::variable_definition& v) {
   const auto type = environment.check_type(v.type);
   const auto& address = alloc(type);
-  environment.define(l, v.id.value, local{address.first, type});
+  environment.define(l, v.id.value, local{&address, type});
   if (v.initializer) {
     expression_checker{{program, result}, environment}.generate_into(
         address, *v.initializer);
