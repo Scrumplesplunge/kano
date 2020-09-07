@@ -265,6 +265,7 @@ struct function_checker : function_builder<ir::function> {
   void generate(environment&, io::location, const ast::assignment&);
   void generate(environment&, io::location, const ast::if_statement&);
   void generate(environment&, io::location, const ast::while_statement&);
+  void generate(environment&, io::location, const ast::block_statement&);
   template <typename T>
   void generate(environment&, io::location l, const T&) {
     io::fatal_message{l, io::message::error}
@@ -1191,16 +1192,13 @@ void expression_checker::generate_into(const local_info& address,
 
 void function_checker::check(io::location l,
                              const ast::function_definition& f) {
-  environment environment{&module.environment};
   // TODO: Implement functions with actual inputs and outputs.
   if (!is<ir::void_type>(type.return_type) || !type.parameters.empty()) {
     io::fatal_message{l, io::message::error}
         << "functions with parameters or with a non-void return type are "
            "unimplemented.";
   }
-  for (const auto& statement : f.body.statements) {
-    generate(environment, statement);
-  }
+  generate(module.environment, l, f.body);
 }
 
 void function_checker::generate(environment&, io::location l,
@@ -1296,6 +1294,12 @@ void function_checker::generate(environment& environment, io::location l,
   expression_checker checker{{program, result}, environment};
   const auto& condition = ensure_loaded(checker.generate(w.condition));
   conditional_jump(l, condition, while_body);
+}
+
+void function_checker::generate(environment& outer, io::location,
+                                const ast::block_statement& b) {
+  environment inner{&outer};
+  for (const auto& statement : b.statements) generate(inner, statement);
 }
 
 void function_checker::generate(environment& environment,
