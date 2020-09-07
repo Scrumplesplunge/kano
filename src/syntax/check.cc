@@ -269,6 +269,7 @@ struct function_checker : function_builder<ir::function> {
     io::fatal_message{l, io::message::error}
         << __PRETTY_FUNCTION__ << ": unimplemented.";
   }
+  void generate(const ast::statement&);
 };
 
 const environment::name_info& environment::lookup(io::location location,
@@ -1256,6 +1257,10 @@ void function_checker::generate(io::location l, const ast::assignment& a) {
         << "only lvalue expressions can be assigned to.";
   }
   checker.generate_into(*lhs.result, a.value);
+}
+
+void function_checker::generate(const ast::statement& s) {
+  s.visit([&](const auto& x) { generate(s.location(), x); });
 }
 
 export void check(const char* filename) {
