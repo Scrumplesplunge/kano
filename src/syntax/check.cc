@@ -262,6 +262,7 @@ struct function_checker : function_builder<ir::function> {
   void check_statement(io::location, const ast::class_definition&);
   void check_statement(io::location, const ast::definition&);
   void check_statement(io::location, const ast::exported_definition&);
+  void check_statement(io::location, const ast::assignment&);
   template <typename T>
   void check_statement(io::location l, const T&) {
     io::fatal_message{l, io::message::error}
@@ -1241,6 +1242,17 @@ void function_checker::check_statement(io::location l,
                                        const ast::exported_definition&) {
   io::fatal_message{l, io::message::error}
       << "exports may not appear inside functions.";
+}
+
+void function_checker::check_statement(io::location l,
+                                       const ast::assignment& a) {
+  expression_checker checker{{program, result}, environment};
+  const info lhs = checker.generate(a.destination);
+  if (lhs.category != info::lvalue) {
+    io::fatal_message{l, io::message::error}
+        << "only lvalue expressions can be assigned to.";
+  }
+  checker.generate_into(*lhs.result, a.value);
 }
 
 export void check(const char* filename) {
