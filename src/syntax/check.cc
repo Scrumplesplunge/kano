@@ -253,6 +253,10 @@ struct function_checker : function_builder<ir::function> {
   module_checker& module;
   const ir::function_type& type;
   environment environment = {&module.environment};
+  // TODO: Find a nicer way of mapping these. One option is to merge symbol and
+  // local into a single type that uniquely identifies "things", but possibly
+  // that is more bug-prone.
+  std::map<ir::symbol, const local_info*> locals = {};
 
   void check(io::location, const ast::function_definition&);
 
@@ -1204,10 +1208,11 @@ void function_checker::check_statement(io::location l,
   const auto type = environment.check_type(v.type);
   const auto& info =
       environment.define(l, v.id.value, local{type}, module.program.symbol());
+  const auto& lhs = alloc(type);
+  locals.emplace(info.symbol, &lhs);
   if (v.initializer) {
-    expression_checker checker{{program, result}, environment};
-    const auto& lhs = checker.add({l, ir::pointer{info.symbol, type}});
-    checker.generate_into(lhs, *v.initializer);
+    expression_checker{{program, result}, environment}.generate_into(
+        lhs, *v.initializer);
   }
 }
 
