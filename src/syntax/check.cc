@@ -264,6 +264,7 @@ struct function_checker : function_builder<ir::function> {
   void generate(io::location, const ast::definition&);
   void generate(io::location, const ast::exported_definition&);
   void generate(io::location, const ast::assignment&);
+  void generate(io::location, const ast::if_statement&);
   template <typename T>
   void generate(io::location l, const T&) {
     io::fatal_message{l, io::message::error}
@@ -1254,6 +1255,26 @@ void function_checker::generate(io::location l, const ast::assignment& a) {
         << "only lvalue expressions can be assigned to.";
   }
   checker.generate_into(*lhs.result, a.value);
+}
+
+void function_checker::generate(io::location l, const ast::if_statement& i) {
+  expression_checker checker{{program, result}, environment};
+  const auto& condition = ensure_loaded(checker.generate(i.condition));
+  const auto& inverse =
+      add({l, ir::bool_type}, {l, ir::logical_not{condition.first}});
+  const ir::symbol end = program.symbol();
+  if (i.else_branch) {
+    const ir::symbol else_branch = program.symbol();
+    conditional_jump(l, inverse, else_branch);
+    generate(i.then_branch);
+    jump(l, end);
+    label(else_branch);
+    generate(*i.else_branch);
+  } else {
+    conditional_jump(l, inverse, end);
+    generate(i.then_branch);
+  }
+  label(end);
 }
 
 void function_checker::generate(const ast::statement& s) {
