@@ -265,6 +265,7 @@ struct function_checker : function_builder<ir::function> {
   void generate(environment&, io::location, const ast::assignment&);
   void generate(environment&, io::location, const ast::if_statement&);
   void generate(environment&, io::location, const ast::while_statement&);
+  void generate(environment&, io::location, const ast::return_statement&);
   void generate(environment&, io::location, const ast::expression_statement&);
   void generate(environment&, io::location, const ast::block_statement&);
   template <typename T>
@@ -1295,6 +1296,21 @@ void function_checker::generate(environment& environment, io::location l,
   expression_checker checker{{program, result}, environment};
   const auto& condition = ensure_loaded(checker.generate(w.condition));
   conditional_jump(l, condition, while_body);
+}
+
+void function_checker::generate(environment& environment, io::location l,
+                                const ast::return_statement& r) {
+  // TODO: Implement return statements for functions with non-void return
+  // types.
+  assert(is<ir::void_type>(type.return_type));
+  if (r.value) {
+    expression_checker checker{{program, result}, environment};
+    const info value = checker.generate(*r.value);
+    io::fatal_message{l, io::message::error}
+        << "cannot return object of type " << value.result->second
+        << " from function returning " << ir::void_type << ".";
+  }
+  add({l, ir::void_type}, {l, ir::ret{}});
 }
 
 void function_checker::generate(environment& environment, io::location,

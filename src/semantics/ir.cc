@@ -183,6 +183,8 @@ struct call {
   std::vector<local> arguments;
 };
 
+struct ret {};
+
 struct negate {
   local inner;
 };
@@ -251,9 +253,9 @@ struct index {
   local offset;
 };
 
-using action = node<constant, stack_allocate, load, store, call, negate, add,
-                    subtract, multiply, divide, modulo, compare_eq, compare_ne,
-                    compare_lt, compare_le, compare_gt, compare_ge,
+using action = node<constant, stack_allocate, load, store, call, ret, negate,
+                    add, subtract, multiply, divide, modulo, compare_eq,
+                    compare_ne, compare_lt, compare_le, compare_gt, compare_ge,
                     jump, conditional_jump, logical_not, index>;
 
 struct step {
