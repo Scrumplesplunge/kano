@@ -442,7 +442,7 @@ struct parser : io::reader {
     assert(peek_word() == "return");
     const auto l = location();
     word();
-    if (try_symbol(";")) return {};
+    if (try_symbol(";")) return {l, ast::return_statement{}};
     auto value = parse_expression();
     symbol(";");
     return {l, ast::return_statement{std::move(value)}};
