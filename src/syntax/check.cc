@@ -88,8 +88,10 @@ struct environment {
   };
   std::map<std::string, name_info, std::less<>> names = {};
   std::optional<ir::symbol> break_label = {};
+  std::optional<ir::symbol> continue_label = {};
 
   std::optional<ir::symbol> lookup_break() const;
+  std::optional<ir::symbol> lookup_continue() const;
 
   // Resolve a name within the environment, searching upwards through the
   // lexical scope for its definition.
@@ -269,20 +271,22 @@ struct function_checker : function_builder<ir::function> {
   void generate(environment&, io::location, const ast::if_statement&);
   void generate(environment&, io::location, const ast::while_statement&);
   void generate(environment&, io::location, const ast::break_statement&);
+  void generate(environment&, io::location, const ast::continue_statement&);
   void generate(environment&, io::location, const ast::return_statement&);
   void generate(environment&, io::location, const ast::expression_statement&);
   void generate(environment&, io::location, const ast::block_statement&);
-  template <typename T>
-  void generate(environment&, io::location l, const T&) {
-    io::fatal_message{l, io::message::error}
-        << __PRETTY_FUNCTION__ << ": unimplemented.";
-  }
   void generate(environment&, const ast::statement&);
 };
 
 std::optional<ir::symbol> environment::lookup_break() const {
   if (break_label) return break_label;
   if (parent) return parent->lookup_break();
+  return std::nullopt;
+}
+
+std::optional<ir::symbol> environment::lookup_continue() const {
+  if (continue_label) return continue_label;
+  if (parent) return parent->lookup_continue();
   return std::nullopt;
 }
 
@@ -1304,6 +1308,7 @@ void function_checker::generate(environment& outer, io::location l,
   label(while_body);
   environment inner{&outer};
   inner.break_label = while_end;
+  inner.continue_label = while_condition;
   generate(inner, w.body);
   label(while_condition);
   expression_checker checker{{program, result}, outer};
@@ -1317,6 +1322,15 @@ void function_checker::generate(environment& environment, io::location l,
   auto label = environment.lookup_break();
   if (!label) {
     io::fatal_message{l, io::message::error} << "cannot break here.";
+  }
+  jump(l, *label);
+}
+
+void function_checker::generate(environment& environment, io::location l,
+                                const ast::continue_statement&) {
+  auto label = environment.lookup_continue();
+  if (!label) {
+    io::fatal_message{l, io::message::error} << "cannot continue here.";
   }
   jump(l, *label);
 }
