@@ -265,6 +265,7 @@ struct function_checker : function_builder<ir::function> {
   void generate(environment&, io::location, const ast::assignment&);
   void generate(environment&, io::location, const ast::if_statement&);
   void generate(environment&, io::location, const ast::while_statement&);
+  void generate(environment&, io::location, const ast::expression_statement&);
   void generate(environment&, io::location, const ast::block_statement&);
   template <typename T>
   void generate(environment&, io::location l, const T&) {
@@ -1294,6 +1295,11 @@ void function_checker::generate(environment& environment, io::location l,
   expression_checker checker{{program, result}, environment};
   const auto& condition = ensure_loaded(checker.generate(w.condition));
   conditional_jump(l, condition, while_body);
+}
+
+void function_checker::generate(environment& environment, io::location,
+                                const ast::expression_statement& e) {
+  expression_checker{{program, result}, environment}.generate(e.expression);
 }
 
 void function_checker::generate(environment& outer, io::location,
