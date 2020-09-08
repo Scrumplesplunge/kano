@@ -87,6 +87,9 @@ struct environment {
     name_type type;
   };
   std::map<std::string, name_info, std::less<>> names = {};
+  std::optional<ir::symbol> break_label = {};
+
+  std::optional<ir::symbol> lookup_break() const;
 
   // Resolve a name within the environment, searching upwards through the
   // lexical scope for its definition.
@@ -265,6 +268,7 @@ struct function_checker : function_builder<ir::function> {
   void generate(environment&, io::location, const ast::assignment&);
   void generate(environment&, io::location, const ast::if_statement&);
   void generate(environment&, io::location, const ast::while_statement&);
+  void generate(environment&, io::location, const ast::break_statement&);
   void generate(environment&, io::location, const ast::return_statement&);
   void generate(environment&, io::location, const ast::expression_statement&);
   void generate(environment&, io::location, const ast::block_statement&);
@@ -275,6 +279,12 @@ struct function_checker : function_builder<ir::function> {
   }
   void generate(environment&, const ast::statement&);
 };
+
+std::optional<ir::symbol> environment::lookup_break() const {
+  if (break_label) return break_label;
+  if (parent) return parent->lookup_break();
+  return std::nullopt;
+}
 
 const environment::name_info& environment::lookup(io::location location,
                                                   std::string_view name) const {
@@ -1285,17 +1295,30 @@ void function_checker::generate(environment& environment, io::location l,
   label(end);
 }
 
-void function_checker::generate(environment& environment, io::location l,
+void function_checker::generate(environment& outer, io::location l,
                                 const ast::while_statement& w) {
   const ir::symbol while_condition = program.symbol();
   jump(l, while_condition);
   const ir::symbol while_body = program.symbol();
+  const ir::symbol while_end = program.symbol();
   label(while_body);
-  generate(environment, w.body);
+  environment inner{&outer};
+  inner.break_label = while_end;
+  generate(inner, w.body);
   label(while_condition);
-  expression_checker checker{{program, result}, environment};
+  expression_checker checker{{program, result}, outer};
   const auto& condition = ensure_loaded(checker.generate(w.condition));
   conditional_jump(l, condition, while_body);
+  label(while_end);
+}
+
+void function_checker::generate(environment& environment, io::location l,
+                                const ast::break_statement&) {
+  auto label = environment.lookup_break();
+  if (!label) {
+    io::fatal_message{l, io::message::error} << "cannot break here.";
+  }
+  jump(l, *label);
 }
 
 void function_checker::generate(environment& environment, io::location l,
