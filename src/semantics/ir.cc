@@ -272,4 +272,9 @@ struct function {
   std::vector<step> steps;
 };
 
+struct program {
+  function initialization;
+  std::map<ir::symbol, function> functions;
+};
+
 }  // namespace semantics::ir

@@ -195,6 +195,7 @@ struct checker {
   ir::symbol next_symbol = ir::symbol::first_user_symbol;
   ir::local next_local = {};
   ir::function initialization = {};
+  std::map<ir::symbol, ir::function> functions = {};
   std::map<std::filesystem::path, module_data> modules;
   // Map from structural type to its symbolic name. This is used for looking up
   // operators for moving values of this type around.
@@ -421,13 +422,14 @@ const environment::name_info& module_checker::check(
     // TODO: Check that parameter names are not duplicated.
     parameters.push_back(environment.check_type(parameter.type));
   }
+  const auto id = program.symbol();
   const auto& info = environment.define(
       l, f.id.value,
-      function{program.symbol(),
-               {std::move(return_type), std::move(parameters)}});
+      function{id, {std::move(return_type), std::move(parameters)}});
   function_checker checker{
       {program, {}}, *this, std::get<function>(info.type).type};
   checker.check(l, f);
+  program.functions.emplace(id, std::move(checker.result));
   return info;
 }
 
@@ -1366,8 +1368,13 @@ void function_checker::generate(environment& environment,
   s.visit([&](const auto& x) { generate(environment, s.location(), x); });
 }
 
-export void check(const char* filename) {
-  checker{}.get_module(std::filesystem::absolute(filename));
+export ir::program check(const char* filename) {
+  checker checker;
+  checker.get_module(std::filesystem::absolute(filename));
+  return {
+    .initialization = std::move(checker.initialization),
+    .functions = std::move(checker.functions),
+  };
 }
 
 }  // namespace syntax
