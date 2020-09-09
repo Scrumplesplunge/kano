@@ -157,10 +157,6 @@ data_type type_of(const value& v) {
   });
 }
 
-struct literal {
-  value value;
-};
-
 enum local : int {};
 
 struct constant {
