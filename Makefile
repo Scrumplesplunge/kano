@@ -1,6 +1,7 @@
 CLANG_PREFIX = ${HOME}/src/clang/build
 
-CXX = ${CLANG_PREFIX}/bin/clang++ -std=c++2a -stdlib=libc++ \
+CXX = ${CLANG_PREFIX}/bin/clang++ -std=c++2a \
+			-I${CLANG_PREFIX}/include/c++/v1 \
 			-I${CLANG_PREFIX}/include \
 			-fimplicit-modules -fimplicit-module-maps \
 			-fmodules-cache-path=build \
@@ -13,7 +14,8 @@ CXX = ${CLANG_PREFIX}/bin/clang++ -std=c++2a -stdlib=libc++ \
 
 default: debug
 
-BASE_CXXFLAGS = -g3
+BASE_CXXFLAGS = -g3 \
+								-nostdinc++
 DEBUG_CXXFLAGS = -fmodules-cache-path=build/debug  \
 								 -fprebuilt-module-path=build/debug \
 								 -DDEBUG_ONLY='if constexpr (true)'
@@ -22,9 +24,9 @@ OPT_CXXFLAGS = -fmodules-cache-path=build/opt  \
 							 -Ofast -ffunction-sections -fdata-sections -flto  \
 							 -DDEBUG_ONLY='if constexpr (false)' -DNDEBUG
 
-BASE_LDFLAGS = -L${CLANG_PREFIX}/lib -Wl,-rpath,${CLANG_PREFIX}/lib
+BASE_LDFLAGS = -stdlib=libc++ -L${CLANG_PREFIX}/lib -Wl,-rpath,${CLANG_PREFIX}/lib
 DEBUG_LDFLAGS =
-OPT_LDFLAGS = #-Wl,--gc-sections -s
+OPT_LDFLAGS = -Ofast -flto -Wl,--gc-sections -s
 
 clean:
 	rm -rf bin build
@@ -47,12 +49,10 @@ build/opt/%.o: | build/opt
 	${CXX} ${BASE_CXXFLAGS} ${OPT_CXXFLAGS} -c $< -o $@
 
 bin/debug/%: build/debug/%.o | bin/debug
-	${CXX} ${BASE_CXXFLAGS} ${DEBUG_CXXFLAGS} $^ ${BASE_LDFLAGS}  \
-		     ${DEBUG_LDFLAGS} -o $@
+	${CXX} $^ ${BASE_LDFLAGS} ${DEBUG_LDFLAGS} -o $@
 
 bin/opt/%: build/opt/%.o | bin/opt
-	${CXX} ${BASE_CXXFLAGS} ${OPT_CXXFLAGS} $^ ${BASE_LDFLAGS}  \
-		     ${OPT_LDFLAGS} -o $@
+	${CXX} $^ ${BASE_LDFLAGS} ${OPT_LDFLAGS} -o $@
 
 build/debug/build.o: src/build.cc
 
