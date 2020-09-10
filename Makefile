@@ -24,7 +24,12 @@ OPT_CXXFLAGS = -fmodules-cache-path=build/opt  \
 							 -Ofast -ffunction-sections -fdata-sections -flto  \
 							 -DDEBUG_ONLY='if constexpr (false)' -DNDEBUG
 
-BASE_LDFLAGS = -stdlib=libc++ -L${CLANG_PREFIX}/lib -Wl,-rpath,${CLANG_PREFIX}/lib
+BASE_LDFLAGS = \
+							 -lc++ \
+							 -lc++abi \
+							 -pthread \
+							 -L${CLANG_PREFIX}/lib \
+							 -Wl,-rpath,${CLANG_PREFIX}/lib
 DEBUG_LDFLAGS =
 OPT_LDFLAGS = -Ofast -flto -Wl,--gc-sections -s
 
