@@ -135,7 +135,6 @@ constexpr bool is_void(const ir::data_type& t) {
 // at least add some debug assertions to detect cases where the allocation will
 // be incorrect.
 void emit(const ir::function& f) {
-  std::cout << "=====\n" << f << "=====\n";
   // TODO: Compute the stack frame size and emit instructions to reserve it.
   struct live_range { int begin = 999'999'999, end = -1; };
   std::map<ir::local, live_range> live_ranges;
@@ -184,5 +183,11 @@ int main(int argc, char* argv[]) {
     return 1;
   }
   auto program = syntax::check(argv[1]);
+  std::cout << "_start:\n" << program.initialization << '\n';
+  for (const auto& [s, f] : program.functions) {
+    std::cout << s << ":\n" << f << '\n';
+  }
+  std::cout << "=====\n";
   emit(program.initialization);
+  for (const auto& [s, f] : program.functions) emit(f);
 }

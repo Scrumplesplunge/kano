@@ -1,3 +1,8 @@
 var x : int32 = 6 * 9;
 var y : int32 = 42;
 var true : bool = x == y;
+
+function demo() : void {
+  var x : int32 = 1;
+  x = x + y;
+}
