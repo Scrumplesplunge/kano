@@ -1,5 +1,3 @@
-#include <cassert>
-
 import <iostream>;
 import ir.parser;
 import ir.x86;
@@ -7,6 +5,8 @@ import kano.ast;
 import kano.code;
 import kano.codegen;
 import kano.parser;
+
+#include <cassert>
 
 int main(int argc, char* argv[]) {
   if (argc != 2) {
