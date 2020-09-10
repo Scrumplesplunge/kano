@@ -634,7 +634,7 @@ void function_builder<function>::construct_into(const local_info& address,
             << "cannot store expression of type " << source_type
             << " to address expression of type " << destination_type << ".";
       }
-      add(p->pointee, {source_type.location(), ir::store{destination, source}});
+      add({}, {source_type.location(), ir::store{destination, source}});
       break;
     }
     case info::lvalue: {
