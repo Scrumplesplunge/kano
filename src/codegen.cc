@@ -161,10 +161,15 @@ void emit(const ir::function& f) {
         ++j;
       }
     }
-    const auto x = f.steps[i];
+    const auto& x = f.steps[i];
     const auto& type = f.locals.at(x.destination);
     // If this step yields nothing, don't allocate a register for it.
     if (is_void(type)) continue;
+    // If this step is an alloca, we don't need a register allocation. The
+    // alloca represents a constant expression of the form -x(%ebp), so we can
+    // substitute that in directly after computing x.
+    // TODO: Consider merging this step into a constant-folding pass.
+    if (x.action.is<ir::stack_allocate>()) continue;
     if (!available.empty()) {
       std::cout << "  " << x.destination << " -> " << available.back() << '\n';
       assignments.emplace(x.destination, available.back());
