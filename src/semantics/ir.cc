@@ -23,6 +23,11 @@ enum symbol : int {
   first_user_symbol,
 };
 
+symbol make_symbol() {
+  static int next = 0;
+  return symbol{next++};
+}
+
 enum builtin_type : int;
 struct array_type;
 struct pointer_type;
@@ -158,6 +163,11 @@ data_type type_of(const value& v) {
 }
 
 enum local : int {};
+
+local make_local() {
+  static int next = 0;
+  return local{next++};
+}
 
 struct constant {
   value value;

@@ -207,12 +207,6 @@ struct checker {
                 {"int32", {{}, "int32", type_type{{{}, ir::int32_type}}}},
                 {"void", {{}, "void", type_type{{{}, ir::void_type}}}}}};
 
-  // Generate a new unique symbol for some exported artefact.
-  ir::symbol symbol();
-
-  // Generate a new unique id for some local variable.
-  ir::local local();
-
   // Fetches data about a module. If the module is not yet processed, open the
   // file and process it. If it is already processed, return the existing data.
   const module_data& get_module(const std::filesystem::path& path);
@@ -313,18 +307,6 @@ const environment::name_info& environment::define(io::location l,
   return i->second;
 }
 
-ir::symbol checker::symbol() {
-  const auto result = next_symbol;
-  next_symbol = ir::symbol((int)next_symbol + 1);
-  return result;
-}
-
-ir::local checker::local() {
-  const auto result = next_local;
-  next_local = ir::local((int)next_local + 1);
-  return result;
-}
-
 const module_data& checker::get_module(const std::filesystem::path& path) {
   const auto name = std::filesystem::relative(path).native();
   std::cerr << name << "...\n";
@@ -338,7 +320,7 @@ const type_info& checker::lookup_type(const ir::data_type& d) {
   const auto [i, is_new] =
       type_by_structure.emplace(d, ir::symbol::none);
   if (!is_new) return types.at(i->second);
-  i->second = symbol();
+  i->second = ir::make_symbol();
   // TODO: Generate definitions for copy and move in terms of sub-types. These
   // should be omitted if the sub-types are not copyable or movable,
   // respectively. For now, treat everything as non-copyable and non-movable.
@@ -399,7 +381,7 @@ void module_checker::check(io::location l, const ast::import_statement& i) {
 const environment::name_info& module_checker::check(
     io::location l, const ast::variable_definition& v) {
   const auto type = environment.check_type(v.type);
-  const ir::symbol id = program.symbol();
+  const ir::symbol id = ir::make_symbol();
   const auto& info = environment.define(l, v.id.value, global{id, type});
   if (v.initializer) {
     const auto& lhs = initialization.add({l, ir::pointer{id, type}});
@@ -422,7 +404,7 @@ const environment::name_info& module_checker::check(
     // TODO: Check that parameter names are not duplicated.
     parameters.push_back(environment.check_type(parameter.type));
   }
-  const auto id = program.symbol();
+  const auto id = ir::make_symbol();
   const auto& info = environment.define(
       l, f.id.value,
       function{id, {std::move(return_type), std::move(parameters)}});
@@ -437,7 +419,7 @@ const environment::name_info& module_checker::check(
     io::location l, const ast::class_definition& c) {
   // TODO: Put the body of the class aside for subsequent checking after all
   // top-level declarations have been handled.
-  const auto symbol = program.symbol();
+  const auto symbol = ir::make_symbol();
   return environment.define(l, c.id.value,
                             type_type{{l, ir::user_defined_type{symbol}}});
 }
@@ -529,7 +511,7 @@ const ir::data_type& expression_checker::effective_type(const info& info) {
 template <typename function>
 const local_info& function_builder<function>::add(ir::data_type type,
                                                   ir::action action) {
-  const auto id = program.local();
+  const auto id = ir::make_local();
   const auto [i, is_new] = result.locals.emplace(id, std::move(type));
   result.steps.emplace_back(ir::step{id, std::move(action)});
   return *i;
@@ -1182,7 +1164,7 @@ void expression_checker::generate_into(const local_info& address,
 void expression_checker::generate_into(const local_info& address,
                                        io::location location,
                                        const ast::logical_and& a) {
-  const auto end = program.symbol();
+  const auto end = ir::make_symbol();
   generate_into(address, a.left);
   const auto& value = add({location, ir::bool_type},
                           {location, ir::logical_not{load(address).first}});
@@ -1194,7 +1176,7 @@ void expression_checker::generate_into(const local_info& address,
 void expression_checker::generate_into(const local_info& address,
                                        io::location location,
                                        const ast::logical_or& o) {
-  const auto end = program.symbol();
+  const auto end = ir::make_symbol();
   generate_into(address, o.left);
   conditional_jump(location, load(address), end);
   generate_into(address, o.right);
@@ -1285,9 +1267,9 @@ void function_checker::generate(environment& environment, io::location l,
   const auto& condition = ensure_loaded(checker.generate(i.condition));
   const auto& inverse =
       add({l, ir::bool_type}, {l, ir::logical_not{condition.first}});
-  const ir::symbol end = program.symbol();
+  const ir::symbol end = ir::make_symbol();
   if (i.else_branch) {
-    const ir::symbol else_branch = program.symbol();
+    const ir::symbol else_branch = ir::make_symbol();
     conditional_jump(l, inverse, else_branch);
     generate(environment, i.then_branch);
     jump(l, end);
@@ -1302,10 +1284,10 @@ void function_checker::generate(environment& environment, io::location l,
 
 void function_checker::generate(environment& outer, io::location l,
                                 const ast::while_statement& w) {
-  const ir::symbol while_condition = program.symbol();
+  const ir::symbol while_condition = ir::make_symbol();
   jump(l, while_condition);
-  const ir::symbol while_body = program.symbol();
-  const ir::symbol while_end = program.symbol();
+  const ir::symbol while_body = ir::make_symbol();
+  const ir::symbol while_end = ir::make_symbol();
   label(while_body);
   environment inner{&outer};
   inner.break_label = while_end;
