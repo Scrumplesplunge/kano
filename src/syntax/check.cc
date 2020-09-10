@@ -544,7 +544,7 @@ const local_info& function_builder<function>::add(ir::value value) {
 
 template <typename function>
 const local_info& function_builder<function>::alloc(ir::data_type type) {
-  return add({type.location(), ir::pointer_type{type}},
+  return add({type.location(), ir::pointer_type{std::move(type)}},
              {type.location(), ir::stack_allocate{}});
 }
 
