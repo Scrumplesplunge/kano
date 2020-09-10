@@ -123,8 +123,9 @@ std::ostream& operator<<(std::ostream& output, reg r) {
 }
 
 constexpr bool is_void(const ir::data_type& t) {
+  if (!t) return true;
   const auto* b = t.get<ir::builtin_type>();
-  return !b || *b == ir::void_type;
+  return b && *b == ir::void_type;
 }
 
 // This register allocation is a simple linear scan, completely ignoring the
