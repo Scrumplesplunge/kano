@@ -596,8 +596,7 @@ const local_info& function_builder<function>::load(const local_info& address) {
 
 template <typename function>
 void function_builder<function>::label(ir::symbol s) {
-  auto [i, is_new] = result.labels.emplace(s, result.steps.size());
-  assert(is_new);
+  add({}, {{}, ir::label{s}});
 }
 
 template <typename function>

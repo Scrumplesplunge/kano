@@ -73,6 +73,7 @@ struct visit_locals {
     f(c.left);
     f(c.right);
   }
+  void operator()(const ir::label&) {}
   void operator()(const ir::jump&) {}
   void operator()(const ir::conditional_jump& c) {
     f(c.condition);

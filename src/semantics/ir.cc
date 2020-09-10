@@ -229,6 +229,10 @@ struct compare_ge {
   local left, right;
 };
 
+struct label {
+  symbol name;
+};
+
 struct jump {
   symbol target;
 };
@@ -252,7 +256,7 @@ struct index {
 using action = node<constant, stack_allocate, load, store, call, ret, negate,
                     add, subtract, multiply, divide, modulo, compare_eq,
                     compare_ne, compare_lt, compare_le, compare_gt, compare_ge,
-                    jump, conditional_jump, logical_not, index>;
+                    label, jump, conditional_jump, logical_not, index>;
 
 struct step {
   local destination;
@@ -264,7 +268,6 @@ struct function {
   // category for locals as well as their type. Value categories are not types:
   // you can't have an lvalue array of prvalues or a prvalue array of lvalues.
   std::map<local, data_type> locals;
-  std::map<symbol, std::vector<step>::size_type> labels;
   std::vector<step> steps;
 };
 
