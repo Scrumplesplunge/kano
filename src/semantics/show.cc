@@ -32,24 +32,24 @@ std::ostream& operator<<(std::ostream& output, variable l) {
   return output << '%' << (int)l;
 }
 
-void print(std::ostream& output, variable d, const constant& c) {
-  output << "  " << d << " = " << c.value;
+void print(std::ostream& output, const constant& c) {
+  output << "  " << c.result << " = " << c.value;
 }
 
-void print(std::ostream& output, variable d, stack_allocate) {
-  output << "  " << d << " = alloca";
+void print(std::ostream& output, stack_allocate s) {
+  output << "  " << s.result << " = alloca";
 }
 
-void print(std::ostream& output, variable d, const load& l) {
-  output << "  " << d << " = *" << l.address;
+void print(std::ostream& output, const load& l) {
+  output << "  " << l.result << " = *" << l.address;
 }
 
-void print(std::ostream& output, variable, const store& s) {
+void print(std::ostream& output, const store& s) {
   output << "  *" << s.address << " = " << s.value;
 }
 
-void print(std::ostream& output, variable d, const call& c) {
-  output << "  " << d << " = " << c.op << '(';
+void print(std::ostream& output, const call& c) {
+  output << "  " << c.result << " = " << c.op << '(';
   if (!c.arguments.empty()) {
     output << c.arguments[0];
     for (int i = 1, n = c.arguments.size(); i < n; i++) {
@@ -59,76 +59,80 @@ void print(std::ostream& output, variable d, const call& c) {
   }
 }
 
-void print(std::ostream& output, variable, ret) {
+void print(std::ostream& output, ret) {
   output << "  ret";
 }
 
-void print(std::ostream& output, variable d, negate n) {
-  output << "  " << d << " = -" << n.inner;
+void print(std::ostream& output, negate n) {
+  output << "  " << n.result << " = -" << n.inner;
 }
 
-void print(std::ostream& output, variable d, add a) {
-  output << "  " << d << " = " << a.left << " + " << a.right;
+void print(std::ostream& output, add a) {
+  output << "  " << a.result << " = " << a.left << " + " << a.right;
 }
 
-void print(std::ostream& output, variable d, subtract s) {
-  output << "  " << d << " = " << s.left << " - " << s.right;
+void print(std::ostream& output, subtract s) {
+  output << "  " << s.result << " = " << s.left << " - " << s.right;
 }
 
-void print(std::ostream& output, variable d, multiply m) {
-  output << "  " << d << " = " << m.left << " * " << m.right;
+void print(std::ostream& output, multiply m) {
+  output << "  " << m.result << " = " << m.left << " * " << m.right;
 }
 
-void print(std::ostream& output, variable dest, divide d) {
-  output << "  " << dest << " = " << d.left << " / " << d.right;
+void print(std::ostream& output, divide d) {
+  output << "  " << d.result << " = " << d.left << " / " << d.right;
 }
 
-void print(std::ostream& output, variable d, modulo m) {
-  output << "  " << d << " = " << m.left << " % " << m.right;
+void print(std::ostream& output, modulo m) {
+  output << "  " << m.result << " = " << m.left << " % " << m.right;
 }
 
-void print(std::ostream& output, variable d, compare_eq c) {
-  output << "  " << d << " = " << c.left << " == " << c.right;
+void print(std::ostream& output, compare_eq c) {
+  output << "  " << c.result << " = " << c.left << " == " << c.right;
 }
 
-void print(std::ostream& output, variable d, compare_ne c) {
-  output << "  " << d << " = " << c.left << " != " << c.right;
+void print(std::ostream& output, compare_ne c) {
+  output << "  " << c.result << " = " << c.left << " != " << c.right;
 }
 
-void print(std::ostream& output, variable d, compare_lt c) {
-  output << "  " << d << " = " << c.left << " < " << c.right;
+void print(std::ostream& output, compare_lt c) {
+  output << "  " << c.result << " = " << c.left << " < " << c.right;
 }
 
-void print(std::ostream& output, variable d, compare_le c) {
-  output << "  " << d << " = " << c.left << " <= " << c.right;
+void print(std::ostream& output, compare_le c) {
+  output << "  " << c.result << " = " << c.left << " <= " << c.right;
 }
 
-void print(std::ostream& output, variable d, compare_gt c) {
-  output << "  " << d << " = " << c.left << " > " << c.right;
+void print(std::ostream& output, compare_gt c) {
+  output << "  " << c.result << " = " << c.left << " > " << c.right;
 }
 
-void print(std::ostream& output, variable d, compare_ge c) {
-  output << "  " << d << " = " << c.left << " >= " << c.right;
+void print(std::ostream& output, compare_ge c) {
+  output << "  " << c.result << " = " << c.left << " >= " << c.right;
 }
 
-void print(std::ostream& output, variable, label l) {
+void print(std::ostream& output, label l) {
   output << l.name << ":";
 }
 
-void print(std::ostream& output, variable, jump j) {
+void print(std::ostream& output, jump j) {
   output << "  jmp " << j.target;
 }
 
-void print(std::ostream& output, variable, conditional_jump c) {
+void print(std::ostream& output, conditional_jump c) {
   output << "  if (" << c.condition << ") jmp " << c.target;
 }
 
-void print(std::ostream& output, variable d, logical_not l) {
-  output << "  " << d << " = !" << l.inner;
+void print(std::ostream& output, logical_not l) {
+  output << "  " << l.result << " = !" << l.inner;
 }
 
-void print(std::ostream& output, variable d, index i) {
-  output << "  " << d << " = " << i.address << '[' << i.offset << ']';
+void print(std::ostream& output, index i) {
+  output << "  " << i.result << " = " << i.address << '[' << i.offset << ']';
+}
+
+void print(std::ostream& output, const step& s) {
+  s.visit([&](const auto& x) { print(output, x); });
 }
 
 std::ostream& operator<<(std::ostream& output, const function& f) {
@@ -136,8 +140,7 @@ std::ostream& operator<<(std::ostream& output, const function& f) {
   const int n = f.steps.size();
   while (true) {
     if (i == n) break;
-    const auto& s = f.steps[i];
-    s.action.visit([&](const auto& x) { print(output, s.destination, x); });
+    print(output, f.steps[i]);
     output << '\n';
     i++;
   }

@@ -111,7 +111,11 @@ struct function_builder {
   checker& program;
   function result;
 
-  const variable_info& add(ir::data_type, ir::action);
+  const variable_info& make_variable(ir::data_type);
+  template <typename T, typename... Args>
+  void step(io::location, Args&&...);
+  template <typename T, typename... Args>
+  const variable_info& add(io::location, ir::data_type, Args&&...);
   const variable_info& add(ir::value);
   const variable_info& alloc(ir::data_type);
   // Given a pointer to an indexable object (i.e. [n]T) and an index i, produce
@@ -120,9 +124,6 @@ struct function_builder {
                              const variable_info&);
   const variable_info& ensure_loaded(const info&);
   const variable_info& load(const variable_info&);
-  void label(ir::symbol);
-  void jump(io::location, ir::symbol);
-  void conditional_jump(io::location, const variable_info&, ir::symbol);
   void construct_into(const variable_info&, const info&);
 };
 
@@ -513,25 +514,42 @@ const ir::data_type& expression_checker::effective_type(const info& info) {
 }
 
 template <typename function>
-const variable_info& function_builder<function>::add(ir::data_type type,
-                                                     ir::action action) {
+const variable_info& function_builder<function>::make_variable(
+    ir::data_type type) {
   const auto id = ir::make_variable();
-  const auto [i, is_new] = result.variables.emplace(id, std::move(type));
-  result.steps.emplace_back(ir::step{id, std::move(action)});
+  auto [i, is_new] = result.variables.emplace(id, std::move(type));
+  assert(is_new);
   return *i;
 }
 
 template <typename function>
+template <typename T, typename... Args>
+void function_builder<function>::step(io::location location, Args&&... args) {
+  result.steps.push_back({location, T{std::forward<Args>(args)...}});
+}
+
+template <typename function>
+template <typename T, typename... Args>
+const variable_info& function_builder<function>::add(io::location location,
+                                                     ir::data_type type,
+                                                     Args&&... args) {
+  const auto& info = make_variable(std::move(type));
+  result.steps.push_back(
+      {location, T{info.first, std::forward<Args>(args)...}});
+  return info;
+}
+
+template <typename function>
 const variable_info& function_builder<function>::add(ir::value value) {
-  const auto location = value.location();
+  auto location = value.location();
   auto type = type_of(value);
-  return add(std::move(type), {location, ir::constant{std::move(value)}});
+  return add<ir::constant>(location, std::move(type), std::move(value));
 }
 
 template <typename function>
 const variable_info& function_builder<function>::alloc(ir::data_type type) {
-  return add({type.location(), ir::pointer_type{std::move(type)}},
-             {type.location(), ir::stack_allocate{}});
+  auto location = type.location();
+  return add<ir::stack_allocate>(location, std::move(type));
 }
 
 template <typename function>
@@ -553,8 +571,8 @@ const variable_info& function_builder<function>::index(
     io::fatal_message{location, io::message::error}
         << "index address must be *[n]T, but got " << address.second << ".";
   }
-  return add({location, ir::pointer_type{a->element}},
-             {location, ir::index{address.first, offset.first}});
+  return add<ir::index>(location, {location, ir::pointer_type{a->element}},
+                        address.first, offset.first);
 }
 
 template <typename function>
@@ -574,30 +592,11 @@ const variable_info& function_builder<function>::load(
     const variable_info& address) {
   const auto& [a, type] = address;
   if (auto* p = type.get<ir::pointer_type>()) {
-    return add(p->pointee, {type.location(), ir::load{a}});
+    return add<ir::load>(type.location(), p->pointee, a);
   } else {
     io::fatal_message{type.location(), io::message::error}
         << "cannot load from expression of type " << type << ".";
   }
-}
-
-template <typename function>
-void function_builder<function>::label(ir::symbol s) {
-  add({}, {{}, ir::label{s}});
-}
-
-template <typename function>
-void function_builder<function>::jump(io::location location,
-                                      ir::symbol target) {
-  add({location, ir::void_type}, {location, ir::jump{target}});
-}
-
-template <typename function>
-void function_builder<function>::conditional_jump(
-    io::location location, const variable_info& condition, ir::symbol target) {
-  assert(is<ir::bool_type>(condition.second));
-  add({location, ir::void_type},
-      {location, ir::conditional_jump{condition.first, target}});
 }
 
 template <typename function>
@@ -619,7 +618,7 @@ void function_builder<function>::construct_into(const variable_info& address,
             << "cannot store expression of type " << source_type
             << " to address expression of type " << destination_type << ".";
       }
-      add({}, {source_type.location(), ir::store{destination, source}});
+      step<ir::store>(source_type.location(), destination, source);
       break;
     }
     case info::lvalue: {
@@ -793,7 +792,7 @@ info expression_checker::generate(io::location location, const ast::negate& n) {
         << "can't negate expression of type " << l.second << '.';
   }
   const auto& out =
-      add({location, ir::int32_type}, {location, ir::negate{l.first}});
+      add<ir::negate>(location, {location, ir::int32_type}, l.first);
   return {.category = info::rvalue, .result = &out};
 }
 
@@ -810,7 +809,7 @@ info expression_checker::generate(io::location location, const ast::add& a) {
         << "can't add expression of type " << r.second << '.';
   }
   const auto& out =
-      add({location, ir::int32_type}, {location, ir::add{l.first, r.first}});
+      add<ir::add>(location, {location, ir::int32_type}, l.first, r.first);
   return {.category = info::rvalue, .result = &out};
 }
 
@@ -827,8 +826,8 @@ info expression_checker::generate(io::location location,
     io::fatal_message{s.right.location(), io::message::error}
         << "can't add expression of type " << r.second << '.';
   }
-  const auto& out = add({location, ir::int32_type},
-                        {location, ir::subtract{l.first, r.first}});
+  const auto& out =
+      add<ir::subtract>(location, {location, ir::int32_type}, l.first, r.first);
   return {.category = info::rvalue, .result = &out};
 }
 
@@ -844,8 +843,8 @@ info expression_checker::generate(io::location location,
     io::fatal_message{m.right.location(), io::message::error}
         << "can't add expression of type " << r.second << '.';
   }
-  const auto& out = add({location, ir::int32_type},
-                        {location, ir::multiply{l.first, r.first}});
+  const auto& out =
+      add<ir::multiply>(location, {location, ir::int32_type}, l.first, r.first);
   return {.category = info::rvalue, .result = &out};
 }
 
@@ -861,7 +860,7 @@ info expression_checker::generate(io::location location, const ast::divide& d) {
         << "can't add expression of type " << r.second << '.';
   }
   const auto& out =
-      add({location, ir::int32_type}, {location, ir::divide{l.first, r.first}});
+      add<ir::divide>(location, {location, ir::int32_type}, l.first, r.first);
   return {.category = info::rvalue, .result = &out};
 }
 
@@ -877,7 +876,7 @@ info expression_checker::generate(io::location location, const ast::modulo& m) {
         << "can't add expression of type " << r.second << '.';
   }
   const auto& out =
-      add({location, ir::int32_type}, {location, ir::modulo{l.first, r.first}});
+      add<ir::modulo>(location, {location, ir::int32_type}, l.first, r.first);
   return {.category = info::rvalue, .result = &out};
 }
 
@@ -901,8 +900,8 @@ info expression_checker::generate(io::location location,
       case ir::bool_type:
       case ir::int32_type:
         return {.category = info::rvalue,
-                .result = &add({location, ir::bool_type},
-                               {location, ir::compare_eq{l2.first, r2.first}})};
+                .result = &add<ir::compare_eq>(
+                    location, {location, ir::bool_type}, l2.first, r2.first)};
     }
   }
   // TODO: Implement comparison of other types.
@@ -930,8 +929,8 @@ info expression_checker::generate(io::location location,
       case ir::bool_type:
       case ir::int32_type:
         return {.category = info::rvalue,
-                .result = &add({location, ir::bool_type},
-                               {location, ir::compare_ne{l2.first, r2.first}})};
+                .result = &add<ir::compare_ne>(
+                    location, {location, ir::bool_type}, l2.first, r2.first)};
     }
   }
   // TODO: Implement comparison of other types.
@@ -959,8 +958,8 @@ info expression_checker::generate(io::location location,
       case ir::bool_type:
       case ir::int32_type:
         return {.category = info::rvalue,
-                .result = &add({location, ir::bool_type},
-                               {location, ir::compare_lt{l2.first, r2.first}})};
+                .result = &add<ir::compare_lt>(
+                    location, {location, ir::bool_type}, l2.first, r2.first)};
     }
   }
   // TODO: Implement comparison of other types.
@@ -988,8 +987,8 @@ info expression_checker::generate(io::location location,
       case ir::bool_type:
       case ir::int32_type:
         return {.category = info::rvalue,
-                .result = &add({location, ir::bool_type},
-                               {location, ir::compare_le{l2.first, r2.first}})};
+                .result = &add<ir::compare_le>(
+                    location, {location, ir::bool_type}, l2.first, r2.first)};
     }
   }
   // TODO: Implement comparison of other types.
@@ -1017,8 +1016,8 @@ info expression_checker::generate(io::location location,
       case ir::bool_type:
       case ir::int32_type:
         return {.category = info::rvalue,
-                .result = &add({location, ir::bool_type},
-                               {location, ir::compare_gt{l2.first, r2.first}})};
+                .result = &add<ir::compare_gt>(
+                    location, {location, ir::bool_type}, l2.first, r2.first)};
     }
   }
   // TODO: Implement comparison of other types.
@@ -1046,8 +1045,8 @@ info expression_checker::generate(io::location location,
       case ir::bool_type:
       case ir::int32_type:
         return {.category = info::rvalue,
-                .result = &add({location, ir::bool_type},
-                               {location, ir::compare_ge{l2.first, r2.first}})};
+                .result = &add<ir::compare_ge>(
+                    location, {location, ir::bool_type}, l2.first, r2.first)};
     }
   }
   // TODO: Implement comparison of other types.
@@ -1077,8 +1076,8 @@ info expression_checker::generate(io::location location,
         << "cannot logically negate expression of type " << inner.result->second
         << ".";
   }
-  const auto& result = add({location, ir::bool_type},
-                           {location, ir::logical_not{inner.result->first}});
+  const auto& result = add<ir::logical_not>(location, {location, ir::bool_type},
+                                            inner.result->first);
   return {.category = info::rvalue, .result = &result};
 }
 
@@ -1170,11 +1169,11 @@ void expression_checker::generate_into(const variable_info& address,
                                        const ast::logical_and& a) {
   const auto end = ir::make_symbol();
   generate_into(address, a.left);
-  const auto& value = add({location, ir::bool_type},
-                          {location, ir::logical_not{load(address).first}});
-  conditional_jump(location, value, end);
+  const auto& value = add<ir::logical_not>(location, {location, ir::bool_type},
+                                           load(address).first);
+  step<ir::conditional_jump>(location, value.first, end);
   generate_into(address, a.right);
-  label(end);
+  step<ir::label>(location, end);
 }
 
 void expression_checker::generate_into(const variable_info& address,
@@ -1182,9 +1181,9 @@ void expression_checker::generate_into(const variable_info& address,
                                        const ast::logical_or& o) {
   const auto end = ir::make_symbol();
   generate_into(address, o.left);
-  conditional_jump(location, load(address), end);
+  step<ir::conditional_jump>(location, load(address).first, end);
   generate_into(address, o.right);
-  label(end);
+  step<ir::label>(location, end);
 }
 
 void expression_checker::generate_into(const variable_info& address,
@@ -1270,38 +1269,38 @@ void function_checker::generate(environment& environment, io::location l,
   expression_checker checker{{program, result}, environment};
   const auto& condition = ensure_loaded(checker.generate(i.condition));
   const auto& inverse =
-      add({l, ir::bool_type}, {l, ir::logical_not{condition.first}});
+      add<ir::logical_not>(l, {l, ir::bool_type}, condition.first);
   const ir::symbol end = ir::make_symbol();
   if (i.else_branch) {
     const ir::symbol else_branch = ir::make_symbol();
-    conditional_jump(l, inverse, else_branch);
+    step<ir::conditional_jump>(l, inverse.first, else_branch);
     generate(environment, i.then_branch);
-    jump(l, end);
-    label(else_branch);
+    step<ir::jump>(l, end);
+    step<ir::label>(l, else_branch);
     generate(environment, *i.else_branch);
   } else {
-    conditional_jump(l, inverse, end);
+    step<ir::conditional_jump>(l, inverse.first, end);
     generate(environment, i.then_branch);
   }
-  label(end);
+  step<ir::label>(l, end);
 }
 
 void function_checker::generate(environment& outer, io::location l,
                                 const ast::while_statement& w) {
   const ir::symbol while_condition = ir::make_symbol();
-  jump(l, while_condition);
+  step<ir::jump>(l, while_condition);
   const ir::symbol while_body = ir::make_symbol();
   const ir::symbol while_end = ir::make_symbol();
-  label(while_body);
+  step<ir::label>(l, while_body);
   environment inner{&outer};
   inner.break_label = while_end;
   inner.continue_label = while_condition;
   generate(inner, w.body);
-  label(while_condition);
+  step<ir::label>(l, while_condition);
   expression_checker checker{{program, result}, outer};
   const auto& condition = ensure_loaded(checker.generate(w.condition));
-  conditional_jump(l, condition, while_body);
-  label(while_end);
+  step<ir::conditional_jump>(l, condition.first, while_body);
+  step<ir::label>(l, while_end);
 }
 
 void function_checker::generate(environment& environment, io::location l,
@@ -1310,7 +1309,7 @@ void function_checker::generate(environment& environment, io::location l,
   if (!label) {
     io::fatal_message{l, io::message::error} << "cannot break here.";
   }
-  jump(l, *label);
+  step<ir::jump>(l, *label);
 }
 
 void function_checker::generate(environment& environment, io::location l,
@@ -1319,7 +1318,7 @@ void function_checker::generate(environment& environment, io::location l,
   if (!label) {
     io::fatal_message{l, io::message::error} << "cannot continue here.";
   }
-  jump(l, *label);
+  step<ir::jump>(l, *label);
 }
 
 void function_checker::generate(environment& environment, io::location l,
@@ -1334,7 +1333,7 @@ void function_checker::generate(environment& environment, io::location l,
         << "cannot return object of type " << value.result->second
         << " from function returning " << ir::void_type << ".";
   }
-  add({l, ir::void_type}, {l, ir::ret{}});
+  step<ir::ret>(l);
 }
 
 void function_checker::generate(environment& environment, io::location,

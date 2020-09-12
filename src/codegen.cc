@@ -1,6 +1,7 @@
 import syntax;
 import semantics.ir;
 import semantics.show;
+import <concepts>;
 import <iostream>;
 
 namespace ir = ::semantics::ir;
@@ -9,12 +10,16 @@ template <typename F>
 struct visit_variables {
   F f;
   void operator()(const ir::step& s) {
-    f(s.destination);
-    s.action.visit([this](const auto& x) { (*this)(x); });
+    s.visit([this](const auto& x) { (*this)(x); });
   }
-  void operator()(const ir::constant&) {}
-  void operator()(const ir::stack_allocate&) {}
+  void operator()(const ir::constant& c) {
+    f(c.result);
+  }
+  void operator()(const ir::stack_allocate& s) {
+    f(s.result);
+  }
   void operator()(const ir::load& l) {
+    f(l.result);
     f(l.address);
   }
   void operator()(const ir::store& s) {
@@ -22,54 +27,67 @@ struct visit_variables {
     f(s.value);
   }
   void operator()(const ir::call& c) {
+    f(c.result);
     f(c.op);
     for (auto a : c.arguments) f(a);
   }
   void operator()(const ir::ret&) {}
   void operator()(const ir::negate& n) {
+    f(n.result);
     f(n.inner);
   }
   void operator()(const ir::add& a) {
+    f(a.result);
     f(a.left);
     f(a.right);
   }
   void operator()(const ir::subtract& s) {
+    f(s.result);
     f(s.left);
     f(s.right);
   }
   void operator()(const ir::multiply& m) {
+    f(m.result);
     f(m.left);
     f(m.right);
   }
   void operator()(const ir::divide& d) {
+    f(d.result);
     f(d.left);
     f(d.right);
   }
   void operator()(const ir::modulo& m) {
+    f(m.result);
     f(m.left);
     f(m.right);
   }
   void operator()(const ir::compare_eq& c) {
+    f(c.result);
     f(c.left);
     f(c.right);
   }
   void operator()(const ir::compare_ne& c) {
+    f(c.result);
     f(c.left);
     f(c.right);
   }
   void operator()(const ir::compare_lt& c) {
+    f(c.result);
     f(c.left);
     f(c.right);
   }
   void operator()(const ir::compare_le& c) {
+    f(c.result);
     f(c.left);
     f(c.right);
   }
   void operator()(const ir::compare_gt& c) {
+    f(c.result);
     f(c.left);
     f(c.right);
   }
   void operator()(const ir::compare_ge& c) {
+    f(c.result);
     f(c.left);
     f(c.right);
   }
@@ -79,14 +97,39 @@ struct visit_variables {
     f(c.condition);
   }
   void operator()(const ir::logical_not& l) {
+    f(l.result);
     f(l.inner);
   }
   void operator()(const ir::index& i) {
+    f(i.result);
     f(i.address);
     f(i.offset);
   }
 };
 template <typename F> visit_variables(F) -> visit_variables<F>;
+
+template <typename T>
+concept step = requires (const ir::step& s) {
+  { s.get<T>() };
+};
+
+template <typename T>
+concept has_result = requires (const T& x) {
+  { x.result } -> std::same_as<ir::variable>;
+};
+
+constexpr struct {
+  template <typename T>
+  requires step<T>
+  const ir::variable* operator()(const T&) const {
+    return nullptr;
+  }
+  template <typename T>
+  requires step<T> && has_result<T>
+  const ir::variable* operator()(const T& x) const {
+    return &x.result;
+  }
+} result;
 
 // TODO: Make use of eax and edx as well. Currently they are not used so that
 // they are available for use with `mul` or `div` without having to shuffle
@@ -123,12 +166,6 @@ std::ostream& operator<<(std::ostream& output, reg r) {
   }
 }
 
-constexpr bool is_void(const ir::data_type& t) {
-  if (!t) return true;
-  const auto* b = t.get<ir::builtin_type>();
-  return b && *b == ir::void_type;
-}
-
 // This register allocation is a simple linear scan, completely ignoring the
 // control flow inside the function. This works fine for IR which the checker
 // currently generates, since variables are only used within logical basic
@@ -163,23 +200,24 @@ void emit(const ir::function& f) {
       }
     }
     const auto& x = f.steps[i];
-    const auto& type = f.variables.at(x.destination);
+    auto* destination = x.visit(result);
     // If this step yields nothing, don't allocate a register for it.
-    if (is_void(type)) continue;
+    if (!destination) continue;
     // If this step is an alloca, we don't need a register allocation. The
     // alloca represents a constant expression of the form -x(%ebp), so we can
     // substitute that in directly after computing x.
     // TODO: Consider merging this step into a constant-folding pass.
-    if (x.action.is<ir::stack_allocate>()) continue;
+    if (x.is<ir::stack_allocate>()) continue;
     if (!available.empty()) {
-      std::cout << "  " << x.destination << " -> " << available.back() << '\n';
-      assignments.emplace(x.destination, available.back());
-      in_use.emplace(available.back(), x.destination);
+      std::cout << "  " << *destination << " -> " << available.back() << '\n';
+      assignments.emplace(*destination, available.back());
+      in_use.emplace(available.back(), *destination);
       available.pop_back();
       continue;
     }
     // TODO: Implement register spilling.
-    io::fatal_message{type.location(), io::message::error}
+    io::fatal_message{f.variables.at(*destination).location(),
+                      io::message::error}
         << "register spilling is not implemented.";
   }
 }

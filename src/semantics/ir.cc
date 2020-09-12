@@ -170,12 +170,16 @@ variable make_variable() {
 }
 
 struct constant {
+  variable result;
   value value;
 };
 
-struct stack_allocate {};
+struct stack_allocate {
+  variable result;
+};
 
 struct load {
+  variable result;
   variable address;
 };
 
@@ -185,6 +189,7 @@ struct store {
 };
 
 struct call {
+  variable result;
   variable op;
   std::vector<variable> arguments;
 };
@@ -192,50 +197,62 @@ struct call {
 struct ret {};
 
 struct negate {
+  variable result;
   variable inner;
 };
 
 struct add {
+  variable result;
   variable left, right;
 };
 
 struct subtract {
+  variable result;
   variable left, right;
 };
 
 struct multiply {
+  variable result;
   variable left, right;
 };
 
 struct divide {
+  variable result;
   variable left, right;
 };
 
 struct modulo {
+  variable result;
   variable left, right;
 };
 
 struct compare_eq {
+  variable result;
   variable left, right;
 };
 
 struct compare_ne {
+  variable result;
   variable left, right;
 };
 
 struct compare_lt {
+  variable result;
   variable left, right;
 };
 
 struct compare_le {
+  variable result;
   variable left, right;
 };
 
 struct compare_gt {
+  variable result;
   variable left, right;
 };
 
 struct compare_ge {
+  variable result;
   variable left, right;
 };
 
@@ -253,25 +270,22 @@ struct conditional_jump {
 };
 
 struct logical_not {
+  variable result;
   variable inner;
 };
 
 // Given a *T referring to an array of T, produces a *T referring to the nth
 // element of that array.
 struct index {
+  variable result;
   variable address;
   variable offset;
 };
 
-using action = node<constant, stack_allocate, load, store, call, ret, negate,
-                    add, subtract, multiply, divide, modulo, compare_eq,
-                    compare_ne, compare_lt, compare_le, compare_gt, compare_ge,
-                    label, jump, conditional_jump, logical_not, index>;
-
-struct step {
-  variable destination;
-  action action;
-};
+using step = node<constant, stack_allocate, load, store, call, ret, negate, add,
+                  subtract, multiply, divide, modulo, compare_eq, compare_ne,
+                  compare_lt, compare_le, compare_gt, compare_ge, label, jump,
+                  conditional_jump, logical_not, index>;
 
 struct function {
   // TODO: For supporting efficient move semantics, we need to track the value
