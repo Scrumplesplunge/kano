@@ -6,7 +6,7 @@ import <iostream>;
 namespace ir = ::semantics::ir;
 
 template <typename F>
-struct visit_locals {
+struct visit_variables {
   F f;
   void operator()(const ir::step& s) {
     f(s.destination);
@@ -86,7 +86,7 @@ struct visit_locals {
     f(i.offset);
   }
 };
-template <typename F> visit_locals(F) -> visit_locals<F>;
+template <typename F> visit_variables(F) -> visit_variables<F>;
 
 // TODO: Make use of eax and edx as well. Currently they are not used so that
 // they are available for use with `mul` or `div` without having to shuffle
@@ -131,26 +131,26 @@ constexpr bool is_void(const ir::data_type& t) {
 
 // This register allocation is a simple linear scan, completely ignoring the
 // control flow inside the function. This works fine for IR which the checker
-// currently generates, since locals are only used within logical basic blocks
-// and everything else uses stack allocations.
+// currently generates, since variables are only used within logical basic
+// blocks and everything else uses stack allocations.
 // TODO: Make this function work with more complicated control flow graphs, or
 // at least add some debug assertions to detect cases where the allocation will
 // be incorrect.
 void emit(const ir::function& f) {
   // TODO: Compute the stack frame size and emit instructions to reserve it.
   struct live_range { int begin = 999'999'999, end = -1; };
-  std::map<ir::local, live_range> live_ranges;
+  std::map<ir::variable, live_range> live_ranges;
   for (int i = 0, n = f.steps.size(); i < n; i++) {
-    visit_locals{[&](ir::local s) {
+    visit_variables{[&](ir::variable s) {
       auto& range = live_ranges[s];
       range.begin = std::min(range.begin, i);
       range.end = std::max(range.end, i);
     }}(f.steps[i]);
   }
-  std::map<ir::local, reg> assignments;
+  std::map<ir::variable, reg> assignments;
   std::vector<reg> available = {spill1, spill2, spill3, spill4, spill5, spill6,
                                 spill7, spill8, ebx,    ecx,    edi,    esi};
-  std::map<reg, ir::local> in_use;
+  std::map<reg, ir::variable> in_use;
   for (int i = 0, n = f.steps.size(); i < n; i++) {
     // Collect registers for which the live range has ended.
     for (auto j = in_use.begin(); j != in_use.end();) {
@@ -163,7 +163,7 @@ void emit(const ir::function& f) {
       }
     }
     const auto& x = f.steps[i];
-    const auto& type = f.locals.at(x.destination);
+    const auto& type = f.variables.at(x.destination);
     // If this step yields nothing, don't allocate a register for it.
     if (is_void(type)) continue;
     // If this step is an alloca, we don't need a register allocation. The

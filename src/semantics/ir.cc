@@ -162,11 +162,11 @@ data_type type_of(const value& v) {
   });
 }
 
-enum local : int {};
+enum variable : int {};
 
-local make_local() {
+variable make_variable() {
   static int next = 0;
-  return local{next++};
+  return variable{next++};
 }
 
 struct constant {
@@ -176,67 +176,67 @@ struct constant {
 struct stack_allocate {};
 
 struct load {
-  local address;
+  variable address;
 };
 
 struct store {
-  local address;
-  local value;
+  variable address;
+  variable value;
 };
 
 struct call {
-  local op;
-  std::vector<local> arguments;
+  variable op;
+  std::vector<variable> arguments;
 };
 
 struct ret {};
 
 struct negate {
-  local inner;
+  variable inner;
 };
 
 struct add {
-  local left, right;
+  variable left, right;
 };
 
 struct subtract {
-  local left, right;
+  variable left, right;
 };
 
 struct multiply {
-  local left, right;
+  variable left, right;
 };
 
 struct divide {
-  local left, right;
+  variable left, right;
 };
 
 struct modulo {
-  local left, right;
+  variable left, right;
 };
 
 struct compare_eq {
-  local left, right;
+  variable left, right;
 };
 
 struct compare_ne {
-  local left, right;
+  variable left, right;
 };
 
 struct compare_lt {
-  local left, right;
+  variable left, right;
 };
 
 struct compare_le {
-  local left, right;
+  variable left, right;
 };
 
 struct compare_gt {
-  local left, right;
+  variable left, right;
 };
 
 struct compare_ge {
-  local left, right;
+  variable left, right;
 };
 
 struct label {
@@ -248,19 +248,19 @@ struct jump {
 };
 
 struct conditional_jump {
-  local condition;
+  variable condition;
   symbol target;
 };
 
 struct logical_not {
-  local inner;
+  variable inner;
 };
 
 // Given a *T referring to an array of T, produces a *T referring to the nth
 // element of that array.
 struct index {
-  local address;
-  local offset;
+  variable address;
+  variable offset;
 };
 
 using action = node<constant, stack_allocate, load, store, call, ret, negate,
@@ -269,15 +269,16 @@ using action = node<constant, stack_allocate, load, store, call, ret, negate,
                     label, jump, conditional_jump, logical_not, index>;
 
 struct step {
-  local destination;
+  variable destination;
   action action;
 };
 
 struct function {
   // TODO: For supporting efficient move semantics, we need to track the value
-  // category for locals as well as their type. Value categories are not types:
-  // you can't have an lvalue array of prvalues or a prvalue array of lvalues.
-  std::map<local, data_type> locals;
+  // category for variable as well as their type. Value categories are not
+  // types: you can't have an lvalue array of prvalues or a prvalue array of
+  // lvalues.
+  std::map<variable, data_type> variables;
   std::vector<step> steps;
 };
 

@@ -15,7 +15,7 @@ namespace syntax {
 
 namespace ir = ::semantics::ir;
 
-using local_info = std::pair<const ir::local, ir::data_type>;
+using variable_info = std::pair<const ir::variable, ir::data_type>;
 
 struct info {
   // Every value has a category which describes how that value can be used.
@@ -36,7 +36,7 @@ struct info {
   // a pointer to a memory location, but unlike an lvalue it is to be
   // considered movable.
   enum { lvalue, rvalue, xvalue } category;
-  const local_info* result;
+  const variable_info* result;
 };
 
 template <ir::builtin_type t>
@@ -61,8 +61,8 @@ struct global {
   ir::data_type type;
 };
 
-struct local {
-  const local_info* address;
+struct variable {
+  const variable_info* address;
   ir::data_type type;
 };
 
@@ -72,7 +72,8 @@ struct type_type {
   ir::data_type type;
 };
 
-using name_type = std::variant<function, module_type, global, local, type_type>;
+using name_type =
+    std::variant<function, module_type, global, variable, type_type>;
 
 struct checker;
 struct module_checker;
@@ -110,18 +111,19 @@ struct function_builder {
   checker& program;
   function result;
 
-  const local_info& add(ir::data_type, ir::action);
-  const local_info& add(ir::value);
-  const local_info& alloc(ir::data_type);
+  const variable_info& add(ir::data_type, ir::action);
+  const variable_info& add(ir::value);
+  const variable_info& alloc(ir::data_type);
   // Given a pointer to an indexable object (i.e. [n]T) and an index i, produce
   // a pointer to the ith element of the object.
-  const local_info& index(io::location, const local_info&, const local_info&);
-  const local_info& ensure_loaded(const info&);
-  const local_info& load(const local_info&);
+  const variable_info& index(io::location, const variable_info&,
+                             const variable_info&);
+  const variable_info& ensure_loaded(const info&);
+  const variable_info& load(const variable_info&);
   void label(ir::symbol);
   void jump(io::location, ir::symbol);
-  void conditional_jump(io::location, const local_info&, ir::symbol);
-  void construct_into(const local_info&, const info&);
+  void conditional_jump(io::location, const variable_info&, ir::symbol);
+  void construct_into(const variable_info&, const info&);
 };
 
 struct expression_checker : function_builder<ir::function&> {
@@ -159,19 +161,21 @@ struct expression_checker : function_builder<ir::function&> {
   info generate(io::location, const ast::call&);
   info generate(const ast::expression&);
 
-  // Like generate, but instead of generating the value into a local, generate
-  // and store the value at the given address.
-  void generate_into(const local_info&, io::location,
+  // Like generate, but instead of generating the value into a variable,
+  // generate and store the value at the given address.
+  void generate_into(const variable_info&, io::location,
                      const ast::literal_aggregate&, const ir::array_type&);
-  void generate_into(const local_info&, io::location,
+  void generate_into(const variable_info&, io::location,
                      const ast::literal_aggregate&);
-  void generate_into(const local_info&, io::location, const ast::logical_and&);
-  void generate_into(const local_info&, io::location, const ast::logical_or&);
+  void generate_into(const variable_info&, io::location,
+                     const ast::logical_and&);
+  void generate_into(const variable_info&, io::location,
+                     const ast::logical_or&);
   template <typename T>
-  void generate_into(const local_info& address, io::location l, const T& x) {
+  void generate_into(const variable_info& address, io::location l, const T& x) {
     construct_into(address, generate(l, x));
   }
-  void generate_into(const local_info&, const ast::expression&);
+  void generate_into(const variable_info&, const ast::expression&);
 };
 
 struct module_data {
@@ -193,7 +197,7 @@ struct type_info {
 
 struct checker {
   ir::symbol next_symbol = ir::symbol::first_user_symbol;
-  ir::local next_local = {};
+  ir::variable next_variable = {};
   ir::function initialization = {};
   std::map<ir::symbol, ir::function> functions = {};
   std::map<std::filesystem::path, module_data> modules;
@@ -249,9 +253,9 @@ struct function_checker : function_builder<ir::function> {
   module_checker& module;
   const ir::function_type& type;
   // TODO: Find a nicer way of mapping these. One option is to merge symbol and
-  // local into a single type that uniquely identifies "things", but possibly
+  // variable into a single type that uniquely identifies "things", but possibly
   // that is more bug-prone.
-  std::map<ir::symbol, const local_info*> locals = {};
+  std::map<ir::symbol, const variable_info*> variables = {};
 
   void check(io::location, const ast::function_definition&);
 
@@ -509,31 +513,31 @@ const ir::data_type& expression_checker::effective_type(const info& info) {
 }
 
 template <typename function>
-const local_info& function_builder<function>::add(ir::data_type type,
-                                                  ir::action action) {
-  const auto id = ir::make_local();
-  const auto [i, is_new] = result.locals.emplace(id, std::move(type));
+const variable_info& function_builder<function>::add(ir::data_type type,
+                                                     ir::action action) {
+  const auto id = ir::make_variable();
+  const auto [i, is_new] = result.variables.emplace(id, std::move(type));
   result.steps.emplace_back(ir::step{id, std::move(action)});
   return *i;
 }
 
 template <typename function>
-const local_info& function_builder<function>::add(ir::value value) {
+const variable_info& function_builder<function>::add(ir::value value) {
   const auto location = value.location();
   auto type = type_of(value);
   return add(std::move(type), {location, ir::constant{std::move(value)}});
 }
 
 template <typename function>
-const local_info& function_builder<function>::alloc(ir::data_type type) {
+const variable_info& function_builder<function>::alloc(ir::data_type type) {
   return add({type.location(), ir::pointer_type{std::move(type)}},
              {type.location(), ir::stack_allocate{}});
 }
 
 template <typename function>
-const local_info& function_builder<function>::index(io::location location,
-                                                    const local_info& address,
-                                                    const local_info& offset) {
+const variable_info& function_builder<function>::index(
+    io::location location, const variable_info& address,
+    const variable_info& offset) {
   if (offset.second != ir::data_type{{}, ir::builtin_type::int32_type}) {
     io::fatal_message{location, io::message::error}
         << "index offset must be integral.";
@@ -554,7 +558,7 @@ const local_info& function_builder<function>::index(io::location location,
 }
 
 template <typename function>
-const local_info& function_builder<function>::ensure_loaded(const info& x) {
+const variable_info& function_builder<function>::ensure_loaded(const info& x) {
   switch (x.category) {
     case info::rvalue:
       return *x.result;
@@ -566,7 +570,8 @@ const local_info& function_builder<function>::ensure_loaded(const info& x) {
 }
 
 template <typename function>
-const local_info& function_builder<function>::load(const local_info& address) {
+const variable_info& function_builder<function>::load(
+    const variable_info& address) {
   const auto& [a, type] = address;
   if (auto* p = type.get<ir::pointer_type>()) {
     return add(p->pointee, {type.location(), ir::load{a}});
@@ -588,16 +593,15 @@ void function_builder<function>::jump(io::location location,
 }
 
 template <typename function>
-void function_builder<function>::conditional_jump(io::location location,
-                                                  const local_info& condition,
-                                                  ir::symbol target) {
+void function_builder<function>::conditional_jump(
+    io::location location, const variable_info& condition, ir::symbol target) {
   assert(is<ir::bool_type>(condition.second));
   add({location, ir::void_type},
       {location, ir::conditional_jump{condition.first, target}});
 }
 
 template <typename function>
-void function_builder<function>::construct_into(const local_info& address,
+void function_builder<function>::construct_into(const variable_info& address,
                                                 const info& value) {
   const auto& [destination, destination_type] = address;
   auto* const p = destination_type.get<ir::pointer_type>();
@@ -672,7 +676,7 @@ info expression_checker::generate(io::location location,
     const auto& result = add({location, ir::pointer{g->symbol, g->type}});
     return {.category = info::lvalue, .result = &result};
   }
-  if (const auto* l = std::get_if<local>(&info.type)) {
+  if (const auto* l = std::get_if<variable>(&info.type)) {
     return {.category = info::lvalue, .result = l->address};
   }
   if (const auto* t = std::get_if<type_type>(&info.type)) {
@@ -1092,7 +1096,7 @@ info expression_checker::generate(const ast::expression& e) {
   return e.visit([&](const auto& x) { return generate(e.location(), x); });
 }
 
-void expression_checker::generate_into(const local_info& address,
+void expression_checker::generate_into(const variable_info& address,
                                        io::location location,
                                        const ast::literal_aggregate& a,
                                        const ir::array_type& array) {
@@ -1149,7 +1153,7 @@ void expression_checker::generate_into(const local_info& address,
       << "unimplemented array literal type.";
 }
 
-void expression_checker::generate_into(const local_info& address,
+void expression_checker::generate_into(const variable_info& address,
                                        io::location location,
                                        const ast::literal_aggregate& a) {
   const auto type = environment.check_type(a.type);
@@ -1161,7 +1165,7 @@ void expression_checker::generate_into(const local_info& address,
       << "unimplemented aggregate literal type.";
 }
 
-void expression_checker::generate_into(const local_info& address,
+void expression_checker::generate_into(const variable_info& address,
                                        io::location location,
                                        const ast::logical_and& a) {
   const auto end = ir::make_symbol();
@@ -1173,7 +1177,7 @@ void expression_checker::generate_into(const local_info& address,
   label(end);
 }
 
-void expression_checker::generate_into(const local_info& address,
+void expression_checker::generate_into(const variable_info& address,
                                        io::location location,
                                        const ast::logical_or& o) {
   const auto end = ir::make_symbol();
@@ -1183,7 +1187,7 @@ void expression_checker::generate_into(const local_info& address,
   label(end);
 }
 
-void expression_checker::generate_into(const local_info& address,
+void expression_checker::generate_into(const variable_info& address,
                                        const ast::expression& e) {
   return e.visit(
       [&](const auto& x) { generate_into(address, e.location(), x); });
@@ -1213,7 +1217,7 @@ void function_checker::generate(environment& environment, io::location l,
                                 const ast::variable_definition& v) {
   const auto type = environment.check_type(v.type);
   const auto& address = alloc(type);
-  environment.define(l, v.id.value, local{&address, type});
+  environment.define(l, v.id.value, variable{&address, type});
   if (v.initializer) {
     expression_checker{{program, result}, environment}.generate_into(
         address, *v.initializer);
