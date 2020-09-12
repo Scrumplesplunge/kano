@@ -169,91 +169,100 @@ variable make_variable() {
   return variable{next++};
 }
 
+// An instruction operand may be:
+//
+//   * An immediate constant.
+//   * A symbol, yielding the address of that symbol.
+//   * A local, yielding the address of that local.
+//   * A variable, yielding the value of that variable.
+struct local { variable id; };
+using operand = std::variant<std::int32_t, symbol, local, variable>;
+
 struct constant {
-  variable result;
+  operand result;
   value value;
 };
 
 struct stack_allocate {
-  variable result;
+  operand result;
 };
 
 struct load {
-  variable result;
-  variable address;
+  operand result;
+  operand address;
 };
 
 struct store {
-  variable address;
-  variable value;
+  operand address;
+  operand value;
 };
 
 struct call {
-  variable result;
-  variable op;
+  operand result;
+  operand op;
   std::vector<variable> arguments;
 };
 
 struct ret {};
 
 struct negate {
-  variable result;
-  variable inner;
+  operand result;
+  operand inner;
 };
 
 struct add {
-  variable result;
-  variable left, right;
+  operand result;
+  operand left, right;
 };
 
 struct subtract {
-  variable result;
-  variable left, right;
+  operand result;
+  operand left, right;
 };
 
 struct multiply {
-  variable result;
-  variable left, right;
+  operand result;
+  operand left, right;
 };
 
 struct divide {
-  variable result;
-  variable left, right;
+  operand result;
+  operand left, right;
 };
 
 struct modulo {
-  variable result;
-  variable left, right;
+  operand result;
+  operand left, right;
 };
 
 struct compare_eq {
-  variable result;
-  variable left, right;
+  operand result;
+  operand left, right;
 };
 
 struct compare_ne {
-  variable result;
-  variable left, right;
+  operand result;
+  operand left, right;
 };
 
 struct compare_lt {
-  variable result;
-  variable left, right;
+  operand result;
+  operand left, right;
 };
 
 struct compare_le {
-  variable result;
-  variable left, right;
+  operand result;
+  operand left, right;
 };
 
 struct compare_gt {
-  variable result;
-  variable left, right;
+  operand result;
+  operand left, right;
 };
 
 struct compare_ge {
-  variable result;
-  variable left, right;
+  operand result;
+  operand left, right;
 };
 
 struct label {
@@ -265,21 +274,21 @@ struct jump {
 };
 
 struct conditional_jump {
-  variable condition;
+  operand condition;
   symbol target;
 };
 
 struct logical_not {
-  variable result;
-  variable inner;
+  operand result;
+  operand inner;
 };
 
 // Given a *T referring to an array of T, produces a *T referring to the nth
 // element of that array.
 struct index {
-  variable result;
-  variable address;
-  variable offset;
+  operand result;
+  operand address;
+  operand offset;
 };
 
 using step = node<constant, stack_allocate, load, store, call, ret, negate, add,

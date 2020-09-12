@@ -12,98 +12,107 @@ struct visit_variables {
   void operator()(const ir::step& s) {
     s.visit([this](const auto& x) { (*this)(x); });
   }
+  void operator()(const ir::operand& o) {
+    std::visit([this](const auto& x) { (*this)(x); }, o);
+  }
+  void operator()(std::int32_t) {}
+  void operator()(ir::symbol) {}
+  void operator()(const ir::local&) {}
+  void operator()(const ir::variable& v) {
+    f(v);
+  }
   void operator()(const ir::constant& c) {
-    f(c.result);
+    (*this)(c.result);
   }
   void operator()(const ir::stack_allocate& s) {
-    f(s.result);
+    (*this)(s.result);
   }
   void operator()(const ir::load& l) {
-    f(l.result);
-    f(l.address);
+    (*this)(l.result);
+    (*this)(l.address);
   }
   void operator()(const ir::store& s) {
-    f(s.address);
-    f(s.value);
+    (*this)(s.address);
+    (*this)(s.value);
   }
   void operator()(const ir::call& c) {
-    f(c.result);
-    f(c.op);
-    for (auto a : c.arguments) f(a);
+    (*this)(c.result);
+    (*this)(c.op);
+    for (auto a : c.arguments) (*this)(a);
   }
   void operator()(const ir::ret&) {}
   void operator()(const ir::negate& n) {
-    f(n.result);
-    f(n.inner);
+    (*this)(n.result);
+    (*this)(n.inner);
   }
   void operator()(const ir::add& a) {
-    f(a.result);
-    f(a.left);
-    f(a.right);
+    (*this)(a.result);
+    (*this)(a.left);
+    (*this)(a.right);
   }
   void operator()(const ir::subtract& s) {
-    f(s.result);
-    f(s.left);
-    f(s.right);
+    (*this)(s.result);
+    (*this)(s.left);
+    (*this)(s.right);
   }
   void operator()(const ir::multiply& m) {
-    f(m.result);
-    f(m.left);
-    f(m.right);
+    (*this)(m.result);
+    (*this)(m.left);
+    (*this)(m.right);
   }
   void operator()(const ir::divide& d) {
-    f(d.result);
-    f(d.left);
-    f(d.right);
+    (*this)(d.result);
+    (*this)(d.left);
+    (*this)(d.right);
   }
   void operator()(const ir::modulo& m) {
-    f(m.result);
-    f(m.left);
-    f(m.right);
+    (*this)(m.result);
+    (*this)(m.left);
+    (*this)(m.right);
   }
   void operator()(const ir::compare_eq& c) {
-    f(c.result);
-    f(c.left);
-    f(c.right);
+    (*this)(c.result);
+    (*this)(c.left);
+    (*this)(c.right);
   }
   void operator()(const ir::compare_ne& c) {
-    f(c.result);
-    f(c.left);
-    f(c.right);
+    (*this)(c.result);
+    (*this)(c.left);
+    (*this)(c.right);
   }
   void operator()(const ir::compare_lt& c) {
-    f(c.result);
-    f(c.left);
-    f(c.right);
+    (*this)(c.result);
+    (*this)(c.left);
+    (*this)(c.right);
   }
   void operator()(const ir::compare_le& c) {
-    f(c.result);
-    f(c.left);
-    f(c.right);
+    (*this)(c.result);
+    (*this)(c.left);
+    (*this)(c.right);
   }
   void operator()(const ir::compare_gt& c) {
-    f(c.result);
-    f(c.left);
-    f(c.right);
+    (*this)(c.result);
+    (*this)(c.left);
+    (*this)(c.right);
   }
   void operator()(const ir::compare_ge& c) {
-    f(c.result);
-    f(c.left);
-    f(c.right);
+    (*this)(c.result);
+    (*this)(c.left);
+    (*this)(c.right);
   }
   void operator()(const ir::label&) {}
   void operator()(const ir::jump&) {}
   void operator()(const ir::conditional_jump& c) {
-    f(c.condition);
+    (*this)(c.condition);
   }
   void operator()(const ir::logical_not& l) {
-    f(l.result);
-    f(l.inner);
+    (*this)(l.result);
+    (*this)(l.inner);
   }
   void operator()(const ir::index& i) {
-    f(i.result);
-    f(i.address);
-    f(i.offset);
+    (*this)(i.result);
+    (*this)(i.address);
+    (*this)(i.offset);
   }
 };
 template <typename F> visit_variables(F) -> visit_variables<F>;
@@ -115,7 +124,7 @@ concept step = requires (const ir::step& s) {
 
 template <typename T>
 concept has_result = requires (const T& x) {
-  { x.result } -> std::same_as<ir::variable>;
+  { x.result } -> std::same_as<ir::operand>;
 };
 
 constexpr struct {
@@ -127,7 +136,7 @@ constexpr struct {
   template <typename T>
   requires step<T> && has_result<T>
   const ir::variable* operator()(const T& x) const {
-    return &x.result;
+    return std::get_if<ir::variable>(&x.result);
   }
 } result;
 

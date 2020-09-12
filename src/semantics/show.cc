@@ -32,6 +32,15 @@ std::ostream& operator<<(std::ostream& output, variable l) {
   return output << '%' << (int)l;
 }
 
+std::ostream& operator<<(std::ostream& output, const local& l) {
+  return output << "-" << l.id << "(%ebp)";
+}
+
+std::ostream& operator<<(std::ostream& output, const operand& o) {
+  std::visit([&](const auto& x) { output << x; }, o);
+  return output;
+}
+
 void print(std::ostream& output, const constant& c) {
   output << "  " << c.result << " = " << c.value;
 }
