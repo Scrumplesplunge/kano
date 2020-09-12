@@ -8,8 +8,8 @@ export module syntax.check;
 
 import syntax.parse;
 export import semantics.ir;
-import <iostream>;
-import <filesystem>;
+import<iostream>;
+import<filesystem>;
 
 namespace syntax {
 
@@ -62,7 +62,7 @@ struct global {
 };
 
 struct variable {
-  const variable_info* address;
+  ir::variable id;
   ir::data_type type;
 };
 
@@ -111,13 +111,13 @@ struct function_builder {
   checker& program;
   function result;
 
+  const variable_info& make_stack_variable(ir::data_type);
   const variable_info& make_variable(ir::data_type);
+  const variable_info& local(io::location, ir::variable);
   template <typename T, typename... Args>
   void step(io::location, Args&&...);
   template <typename T, typename... Args>
   const variable_info& add(io::location, ir::data_type, Args&&...);
-  const variable_info& add(ir::value);
-  const variable_info& alloc(ir::data_type);
   // Given a pointer to an indexable object (i.e. [n]T) and an index i, produce
   // a pointer to the ith element of the object.
   const variable_info& index(io::location, const variable_info&,
@@ -322,8 +322,7 @@ const module_data& checker::get_module(const std::filesystem::path& path) {
 }
 
 const type_info& checker::lookup_type(const ir::data_type& d) {
-  const auto [i, is_new] =
-      type_by_structure.emplace(d, ir::symbol::none);
+  const auto [i, is_new] = type_by_structure.emplace(d, ir::symbol::none);
   if (!is_new) return types.at(i->second);
   i->second = ir::make_symbol();
   // TODO: Generate definitions for copy and move in terms of sub-types. These
@@ -389,14 +388,15 @@ const environment::name_info& module_checker::check(
   const ir::symbol id = ir::make_symbol();
   const auto& info = environment.define(l, v.id.value, global{id, type});
   if (v.initializer) {
-    const auto& lhs = initialization.add({l, ir::pointer{id, type}});
+    const auto& lhs = initialization.add<ir::copy>(
+        l, {l, ir::pointer_type{std::move(type)}}, id);
     initialization.generate_into(lhs, *v.initializer);
   }
   return info;
 }
 
-const environment::name_info& module_checker::check(io::location l,
-                                            const ast::alias_definition& a) {
+const environment::name_info& module_checker::check(
+    io::location l, const ast::alias_definition& a) {
   return environment.define(l, a.id.value,
                             type_type{environment.check_type(a.type)});
 }
@@ -503,7 +503,8 @@ ir::data_type environment::check_type(const ast::expression& e) const {
 
 const ir::data_type& expression_checker::effective_type(const info& info) {
   switch (info.category) {
-    case info::rvalue: return info.result->second;
+    case info::rvalue:
+      return info.result->second;
     case info::lvalue:
     case info::xvalue: {
       const auto* p = info.result->second.get<ir::pointer_type>();
@@ -514,12 +515,29 @@ const ir::data_type& expression_checker::effective_type(const info& info) {
 }
 
 template <typename function>
+const variable_info& function_builder<function>::make_stack_variable(
+    ir::data_type type) {
+  const auto id = ir::make_variable();
+  auto [i, is_new] = result.stack_variables.emplace(id, std::move(type));
+  assert(is_new);
+  return *i;
+}
+
+template <typename function>
 const variable_info& function_builder<function>::make_variable(
     ir::data_type type) {
   const auto id = ir::make_variable();
   auto [i, is_new] = result.variables.emplace(id, std::move(type));
   assert(is_new);
   return *i;
+}
+
+template <typename function>
+const variable_info& function_builder<function>::local(io::location l,
+                                                       ir::variable id) {
+  const auto& type = result.stack_variables.at(id);
+  return add<ir::copy>(l, {type.location(), ir::pointer_type{type}},
+                       ir::local{id});
 }
 
 template <typename function>
@@ -537,19 +555,6 @@ const variable_info& function_builder<function>::add(io::location location,
   result.steps.push_back(
       {location, T{info.first, std::forward<Args>(args)...}});
   return info;
-}
-
-template <typename function>
-const variable_info& function_builder<function>::add(ir::value value) {
-  auto location = value.location();
-  auto type = type_of(value);
-  return add<ir::constant>(location, std::move(type), std::move(value));
-}
-
-template <typename function>
-const variable_info& function_builder<function>::alloc(ir::data_type type) {
-  auto location = type.location();
-  return add<ir::stack_allocate>(location, std::move(type));
 }
 
 template <typename function>
@@ -637,8 +642,10 @@ void function_builder<function>::construct_into(const variable_info& address,
                           ir::builtin_type::void_type},
           .parameters = {destination_type, source_type},
       };
-      add({destination_type.location(),
-           ir::function_pointer{type_info.copy, std::move(copy_type)}});
+      add<ir::copy>(destination_type.location(),
+                    {destination_type.location(),
+                     ir::function_pointer_type{std::move(copy_type)}},
+                    type_info.copy);
       break;
     }
     case info::xvalue: {
@@ -657,8 +664,10 @@ void function_builder<function>::construct_into(const variable_info& address,
                           ir::builtin_type::void_type},
           .parameters = {destination_type, source_type},
       };
-      add({destination_type.location(),
-           ir::function_pointer{type_info.move, std::move(move_type)}});
+      add<ir::copy>(destination_type.location(),
+                    {destination_type.location(),
+                     ir::function_pointer_type{std::move(move_type)}},
+                    type_info.move);
       break;
     }
   }
@@ -667,16 +676,18 @@ void function_builder<function>::construct_into(const variable_info& address,
 info expression_checker::generate(io::location location,
                                   const environment::name_info& info) {
   if (const auto* f = std::get_if<function>(&info.type)) {
-    const auto& result =
-        add({location, ir::function_pointer{f->symbol, f->type}});
+    const auto& result = add<ir::copy>(
+        location, {location, ir::function_pointer_type{f->type}}, f->symbol);
     return {.category = info::lvalue, .result = &result};
   }
   if (const auto* g = std::get_if<global>(&info.type)) {
-    const auto& result = add({location, ir::pointer{g->symbol, g->type}});
+    const auto& result = add<ir::copy>(
+        location, {location, ir::pointer_type{g->type}}, g->symbol);
     return {.category = info::lvalue, .result = &result};
   }
   if (const auto* l = std::get_if<variable>(&info.type)) {
-    return {.category = info::lvalue, .result = l->address};
+    return {.category = info::lvalue,
+            .result = &add<ir::copy>(location, l->type, l->id)};
   }
   if (const auto* t = std::get_if<type_type>(&info.type)) {
     io::message{location, io::message::error}
@@ -701,7 +712,8 @@ info expression_checker::generate(io::location location,
     io::fatal_message{location, io::message::error}
         << "integer literal exceeds the maximum allowed value for int32.";
   }
-  const auto& result = add({location, std::int32_t(i.value)});
+  const auto& result = add<ir::copy>(location, {location, ir::int32_type},
+                                     std::int32_t(i.value));
   return {.category = info::rvalue, .result = &result};
 }
 
@@ -715,9 +727,9 @@ info expression_checker::generate(io::location location,
 info expression_checker::generate(io::location location,
                                   const ast::literal_aggregate& a,
                                   const ir::array_type& array) {
-  const auto& mem = alloc({location, array});
-  generate_into(mem, location, a, array);
-  return {.category = info::xvalue, .result = &mem};
+  const auto& mem = make_stack_variable({location, array});
+  generate_into(local(location, mem.first), location, a, array);
+  return {.category = info::xvalue, .result = &local(location, mem.first)};
 }
 
 info expression_checker::generate(io::location location,
@@ -896,7 +908,9 @@ info expression_checker::generate(io::location location,
     switch (*b) {
       case ir::void_type:
         // void values are unconditionally equal to each other.
-        return {.category = info::rvalue, .result = &add({location, true})};
+        return {
+            .category = info::rvalue,
+            .result = &add<ir::copy>(location, {location, ir::bool_type}, 1)};
       case ir::bool_type:
       case ir::int32_type:
         return {.category = info::rvalue,
@@ -925,7 +939,9 @@ info expression_checker::generate(io::location location,
     switch (*b) {
       case ir::void_type:
         // void values are unconditionally equal to each other.
-        return {.category = info::rvalue, .result = &add({location, true})};
+        return {
+            .category = info::rvalue,
+            .result = &add<ir::copy>(location, {location, ir::bool_type}, 0)};
       case ir::bool_type:
       case ir::int32_type:
         return {.category = info::rvalue,
@@ -954,7 +970,9 @@ info expression_checker::generate(io::location location,
     switch (*b) {
       case ir::void_type:
         // void values are unconditionally equal to each other.
-        return {.category = info::rvalue, .result = &add({location, true})};
+        return {
+            .category = info::rvalue,
+            .result = &add<ir::copy>(location, {location, ir::bool_type}, 0)};
       case ir::bool_type:
       case ir::int32_type:
         return {.category = info::rvalue,
@@ -983,7 +1001,9 @@ info expression_checker::generate(io::location location,
     switch (*b) {
       case ir::void_type:
         // void values are unconditionally equal to each other.
-        return {.category = info::rvalue, .result = &add({location, true})};
+        return {
+            .category = info::rvalue,
+            .result = &add<ir::copy>(location, {location, ir::bool_type}, 1)};
       case ir::bool_type:
       case ir::int32_type:
         return {.category = info::rvalue,
@@ -1012,7 +1032,9 @@ info expression_checker::generate(io::location location,
     switch (*b) {
       case ir::void_type:
         // void values are unconditionally equal to each other.
-        return {.category = info::rvalue, .result = &add({location, true})};
+        return {
+            .category = info::rvalue,
+            .result = &add<ir::copy>(location, {location, ir::bool_type}, 0)};
       case ir::bool_type:
       case ir::int32_type:
         return {.category = info::rvalue,
@@ -1041,7 +1063,9 @@ info expression_checker::generate(io::location location,
     switch (*b) {
       case ir::void_type:
         // void values are unconditionally equal to each other.
-        return {.category = info::rvalue, .result = &add({location, true})};
+        return {
+            .category = info::rvalue,
+            .result = &add<ir::copy>(location, {location, ir::bool_type}, 1)};
       case ir::bool_type:
       case ir::int32_type:
         return {.category = info::rvalue,
@@ -1056,16 +1080,16 @@ info expression_checker::generate(io::location location,
 
 info expression_checker::generate(io::location location,
                                   const ast::logical_and& a) {
-  const auto& mem = alloc({location, ir::bool_type});
-  generate_into(mem, location, a);
-  return {.category = info::lvalue, .result = &mem};
+  const auto& mem = make_stack_variable({location, ir::bool_type});
+  generate_into(local(location, mem.first), location, a);
+  return {.category = info::lvalue, .result = &local(location, mem.first)};
 }
 
 info expression_checker::generate(io::location location,
                                   const ast::logical_or& o) {
-  const auto& mem = alloc({location, ir::bool_type});
-  generate_into(mem, location, o);
-  return {.category = info::xvalue, .result = &mem};
+  const auto& mem = make_stack_variable({location, ir::bool_type});
+  generate_into(local(location, mem.first), location, o);
+  return {.category = info::xvalue, .result = &local(location, mem.first)};
 }
 
 info expression_checker::generate(io::location location,
@@ -1115,13 +1139,13 @@ void expression_checker::generate_into(const variable_info& address,
       has_bare = true;
       continue;
     }
-    if (auto* f = std::get_if<ast::literal_aggregate::field_assignment>(
-            &argument)) {
+    if (auto* f =
+            std::get_if<ast::literal_aggregate::field_assignment>(&argument)) {
       io::fatal_message{f->value.location(), io::message::error}
           << "cannot have field assignments in an array literal.";
     }
-    if (auto* i = std::get_if<ast::literal_aggregate::index_assignment>(
-            &argument)) {
+    if (auto* i =
+            std::get_if<ast::literal_aggregate::index_assignment>(&argument)) {
       if (has_bare) {
         io::fatal_message{i->value.location(), io::message::error}
             << "cannot mix bare expressions and indexed expressions in an "
@@ -1141,8 +1165,9 @@ void expression_checker::generate_into(const variable_info& address,
     }
     for (std::int32_t i = 0, n = a.arguments.size(); i < n; i++) {
       const auto& argument = std::get<ast::expression>(a.arguments[i]);
-      const auto& target =
-          index(argument.location(), address, add({argument.location(), i}));
+      const auto& target = index(
+          argument.location(), address,
+          add<ir::copy>(location, {argument.location(), ir::int32_type}, i));
       generate_into(target, argument);
     }
     return;
@@ -1215,11 +1240,11 @@ void function_checker::generate(environment&, io::location l,
 void function_checker::generate(environment& environment, io::location l,
                                 const ast::variable_definition& v) {
   const auto type = environment.check_type(v.type);
-  const auto& address = alloc(type);
-  environment.define(l, v.id.value, variable{&address, type});
+  const auto& address = make_stack_variable(type);
+  environment.define(l, v.id.value, variable{address.first, type});
   if (v.initializer) {
     expression_checker{{program, result}, environment}.generate_into(
-        address, *v.initializer);
+        local(l, address.first), *v.initializer);
   }
 }
 
@@ -1356,8 +1381,8 @@ export ir::program check(const char* filename) {
   checker checker;
   checker.get_module(std::filesystem::absolute(filename));
   return {
-    .initialization = std::move(checker.initialization),
-    .functions = std::move(checker.functions),
+      .initialization = std::move(checker.initialization),
+      .functions = std::move(checker.functions),
   };
 }
 

@@ -178,13 +178,9 @@ variable make_variable() {
 struct local { variable id; };
 using operand = std::variant<std::int32_t, symbol, local, variable>;
 
-struct constant {
+struct copy {
   operand result;
-  value value;
-};
-
-struct stack_allocate {
-  operand result;
+  operand value;
 };
 
 struct load {
@@ -291,16 +287,18 @@ struct index {
   operand offset;
 };
 
-using step = node<constant, stack_allocate, load, store, call, ret, negate, add,
-                  subtract, multiply, divide, modulo, compare_eq, compare_ne,
-                  compare_lt, compare_le, compare_gt, compare_ge, label, jump,
-                  conditional_jump, logical_not, index>;
+using step =
+    node<copy, load, store, call, ret, negate, add, subtract, multiply, divide,
+         modulo, compare_eq, compare_ne, compare_lt, compare_le, compare_gt,
+         compare_ge, label, jump, conditional_jump, logical_not, index>;
 
 struct function {
-  // TODO: For supporting efficient move semantics, we need to track the value
-  // category for variable as well as their type. Value categories are not
-  // types: you can't have an lvalue array of prvalues or a prvalue array of
-  // lvalues.
+  // Variables which require stack space. Such variables can be accessed via
+  // local{id} operands, which yield the address of the stack location for the
+  // variable.
+  std::map<variable, data_type> stack_variables;
+  // Variables which do not require stack space. Such variables can be
+  // referenced directly in operands.
   std::map<variable, data_type> variables;
   std::vector<step> steps;
 };

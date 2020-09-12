@@ -41,12 +41,8 @@ std::ostream& operator<<(std::ostream& output, const operand& o) {
   return output;
 }
 
-void print(std::ostream& output, const constant& c) {
+void print(std::ostream& output, const copy& c) {
   output << "  " << c.result << " = " << c.value;
-}
-
-void print(std::ostream& output, stack_allocate s) {
-  output << "  " << s.result << " = alloca";
 }
 
 void print(std::ostream& output, const load& l) {

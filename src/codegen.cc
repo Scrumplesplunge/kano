@@ -21,11 +21,9 @@ struct visit_variables {
   void operator()(const ir::variable& v) {
     f(v);
   }
-  void operator()(const ir::constant& c) {
+  void operator()(const ir::copy& c) {
     (*this)(c.result);
-  }
-  void operator()(const ir::stack_allocate& s) {
-    (*this)(s.result);
+    (*this)(c.value);
   }
   void operator()(const ir::load& l) {
     (*this)(l.result);
@@ -212,11 +210,6 @@ void emit(const ir::function& f) {
     auto* destination = x.visit(result);
     // If this step yields nothing, don't allocate a register for it.
     if (!destination) continue;
-    // If this step is an alloca, we don't need a register allocation. The
-    // alloca represents a constant expression of the form -x(%ebp), so we can
-    // substitute that in directly after computing x.
-    // TODO: Consider merging this step into a constant-folding pass.
-    if (x.is<ir::stack_allocate>()) continue;
     if (!available.empty()) {
       std::cout << "  " << *destination << " -> " << available.back() << '\n';
       assignments.emplace(*destination, available.back());
