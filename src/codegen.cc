@@ -175,16 +175,9 @@ std::ostream& operator<<(std::ostream& output, reg r) {
   }
 }
 
-// This register allocation is a simple linear scan, completely ignoring the
-// control flow inside the function. This works fine for IR which the checker
-// currently generates, since variables are only used within logical basic
-// blocks and everything else uses stack allocations.
-// TODO: Make this function work with more complicated control flow graphs, or
-// at least add some debug assertions to detect cases where the allocation will
-// be incorrect.
-void emit(const ir::function& f) {
-  // TODO: Compute the stack frame size and emit instructions to reserve it.
-  struct live_range { int begin = 999'999'999, end = -1; };
+struct live_range { int begin = 999'999'999, end = -1; };
+
+std::map<ir::variable, live_range> live_ranges(const ir::function& f) {
   std::map<ir::variable, live_range> live_ranges;
   for (int i = 0, n = f.steps.size(); i < n; i++) {
     visit_variables{[&](ir::variable s) {
@@ -193,13 +186,26 @@ void emit(const ir::function& f) {
       range.end = std::max(range.end, i);
     }}(f.steps[i]);
   }
+  return live_ranges;
+}
+
+// This register allocation is a simple linear scan, completely ignoring the
+// control flow inside the function. This works fine for IR which the checker
+// currently generates, since variables are only used within logical basic
+// blocks and everything else uses stack allocations.
+// TODO: Make this function work with more complicated control flow graphs, or
+// at least add some debug assertions to detect cases where the allocation will
+// be incorrect.
+std::map<ir::variable, std::variant<reg, ir::local>> allocate_registers(
+    const ir::function& f) {
+  const auto ranges = live_ranges(f);
   std::map<ir::variable, std::variant<reg, ir::local>> assignments;
   std::vector<reg> available = {ebx, ecx, edi, esi};
   std::map<reg, ir::variable> in_use;
   for (int i = 0, n = f.steps.size(); i < n; i++) {
     // Collect registers for which the live range has ended.
     for (auto j = in_use.begin(); j != in_use.end();) {
-      const auto& range = live_ranges.at(j->second);
+      const auto& range = ranges.at(j->second);
       if (range.end < i) {
         available.push_back(j->first);
         j = in_use.erase(j);
@@ -214,7 +220,7 @@ void emit(const ir::function& f) {
     if (available.empty()) {
       assert(!in_use.empty());
       const auto by_range_end = [&](const auto& l, const auto& r) {
-        return live_ranges.at(l.second).end < live_ranges.at(r.second).end;
+        return ranges.at(l.second).end < ranges.at(r.second).end;
       };
       auto i = std::max_element(in_use.begin(), in_use.end(), by_range_end);
       const auto local = ir::make_local();
@@ -227,7 +233,12 @@ void emit(const ir::function& f) {
       available.pop_back();
     }
   }
-  for (const auto& [v, x] : assignments) {
+  return assignments;
+}
+
+void emit(const ir::function& f) {
+  // TODO: Compute the stack frame size and emit instructions to reserve it.
+  for (const auto& [v, x] : allocate_registers(f)) {
     std::cout << "  " << v << " -> ";
     std::visit([](const auto& x) { std::cout << x; }, x);
     std::cout << '\n';
