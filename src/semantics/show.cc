@@ -33,7 +33,7 @@ std::ostream& operator<<(std::ostream& output, variable l) {
 }
 
 std::ostream& operator<<(std::ostream& output, const local& l) {
-  return output << "-" << l.id << "(%ebp)";
+  return output << "-local" << (int)l << "(%ebp)";
 }
 
 std::ostream& operator<<(std::ostream& output, const operand& o) {

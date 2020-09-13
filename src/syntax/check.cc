@@ -62,7 +62,7 @@ struct global {
 };
 
 struct variable {
-  ir::variable id;
+  ir::local id;
   ir::data_type type;
 };
 
@@ -111,9 +111,9 @@ struct function_builder {
   checker& program;
   function result;
 
-  const variable_info& make_stack_variable(ir::data_type);
+  const auto& make_stack_variable(ir::data_type);
   const variable_info& make_variable(ir::data_type);
-  const variable_info& local(io::location, ir::variable);
+  const variable_info& local(io::location, ir::local);
   template <typename T, typename... Args>
   void step(io::location, Args&&...);
   template <typename T, typename... Args>
@@ -515,9 +515,9 @@ const ir::data_type& expression_checker::effective_type(const info& info) {
 }
 
 template <typename function>
-const variable_info& function_builder<function>::make_stack_variable(
+const auto& function_builder<function>::make_stack_variable(
     ir::data_type type) {
-  const auto id = ir::make_variable();
+  const auto id = ir::make_local();
   auto [i, is_new] = result.stack_variables.emplace(id, std::move(type));
   assert(is_new);
   return *i;
@@ -534,10 +534,9 @@ const variable_info& function_builder<function>::make_variable(
 
 template <typename function>
 const variable_info& function_builder<function>::local(io::location l,
-                                                       ir::variable id) {
+                                                       ir::local id) {
   const auto& type = result.stack_variables.at(id);
-  return add<ir::copy>(l, {type.location(), ir::pointer_type{type}},
-                       ir::local{id});
+  return add<ir::copy>(l, {type.location(), ir::pointer_type{type}}, id);
 }
 
 template <typename function>

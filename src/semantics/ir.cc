@@ -162,11 +162,18 @@ data_type type_of(const value& v) {
   });
 }
 
-enum variable : int {};
+enum class variable : int {};
 
 variable make_variable() {
   static int next = 0;
   return variable{next++};
+}
+
+enum class local : int {};
+
+local make_local() {
+  static int next = 0;
+  return local{next++};
 }
 
 // An instruction operand may be:
@@ -175,7 +182,6 @@ variable make_variable() {
 //   * A symbol, yielding the address of that symbol.
 //   * A local, yielding the address of that local.
 //   * A variable, yielding the value of that variable.
-struct local { variable id; };
 using operand = std::variant<std::int32_t, symbol, local, variable>;
 
 struct copy {
@@ -296,7 +302,7 @@ struct function {
   // Variables which require stack space. Such variables can be accessed via
   // local{id} operands, which yield the address of the stack location for the
   // variable.
-  std::map<variable, data_type> stack_variables;
+  std::map<local, data_type> stack_variables;
   // Variables which do not require stack space. Such variables can be
   // referenced directly in operands.
   std::map<variable, data_type> variables;
