@@ -4,6 +4,8 @@ import semantics.show;
 import <concepts>;
 import <iostream>;
 
+#include <cassert>
+
 namespace ir = ::semantics::ir;
 
 template <typename F>
@@ -191,9 +193,8 @@ void emit(const ir::function& f) {
       range.end = std::max(range.end, i);
     }}(f.steps[i]);
   }
-  std::map<ir::variable, reg> assignments;
-  std::vector<reg> available = {spill1, spill2, spill3, spill4, spill5, spill6,
-                                spill7, spill8, ebx,    ecx,    edi,    esi};
+  std::map<ir::variable, std::variant<reg, ir::local>> assignments;
+  std::vector<reg> available = {ebx, ecx, edi, esi};
   std::map<reg, ir::variable> in_use;
   for (int i = 0, n = f.steps.size(); i < n; i++) {
     // Collect registers for which the live range has ended.
@@ -210,18 +211,28 @@ void emit(const ir::function& f) {
     auto* destination = x.visit(result);
     // If this step yields nothing, don't allocate a register for it.
     if (!destination) continue;
-    if (!available.empty()) {
-      std::cout << "  " << *destination << " -> " << available.back() << '\n';
+    if (available.empty()) {
+      assert(!in_use.empty());
+      const auto by_range_end = [&](const auto& l, const auto& r) {
+        return live_ranges.at(l.second).end < live_ranges.at(r.second).end;
+      };
+      auto i = std::max_element(in_use.begin(), in_use.end(), by_range_end);
+      const auto local = ir::make_local();
+      assignments.at(i->second) = local;
+      i->second = *destination;
+      assignments.emplace(*destination, i->first);
+    } else {
       assignments.emplace(*destination, available.back());
       in_use.emplace(available.back(), *destination);
       available.pop_back();
-      continue;
     }
-    // TODO: Implement register spilling.
-    io::fatal_message{f.variables.at(*destination).location(),
-                      io::message::error}
-        << "register spilling is not implemented.";
   }
+  for (const auto& [v, x] : assignments) {
+    std::cout << "  " << v << " -> ";
+    std::visit([](const auto& x) { std::cout << x; }, x);
+    std::cout << '\n';
+  }
+  // TODO: Actually emit the code.
 }
 
 int main(int argc, char* argv[]) {
