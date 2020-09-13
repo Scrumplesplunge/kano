@@ -9,113 +9,104 @@ import <iostream>;
 namespace ir = ::semantics::ir;
 
 template <typename F>
-struct visit_variables {
+struct visit_operands {
   F f;
   void operator()(const ir::step& s) {
     s.visit([this](const auto& x) { (*this)(x); });
   }
-  void operator()(const ir::operand& o) {
-    std::visit([this](const auto& x) { (*this)(x); }, o);
-  }
-  void operator()(std::int32_t) {}
-  void operator()(ir::symbol) {}
-  void operator()(const ir::local&) {}
-  void operator()(const ir::variable& v) {
-    f(v);
-  }
   void operator()(const ir::copy& c) {
-    (*this)(c.result);
-    (*this)(c.value);
+    f(c.result);
+    f(c.value);
   }
   void operator()(const ir::load& l) {
-    (*this)(l.result);
-    (*this)(l.address);
+    f(l.result);
+    f(l.address);
   }
   void operator()(const ir::store& s) {
-    (*this)(s.address);
-    (*this)(s.value);
+    f(s.address);
+    f(s.value);
   }
   void operator()(const ir::call& c) {
-    (*this)(c.result);
-    (*this)(c.op);
-    for (auto a : c.arguments) (*this)(a);
+    f(c.result);
+    f(c.op);
+    for (auto a : c.arguments) f(a);
   }
   void operator()(const ir::ret&) {}
   void operator()(const ir::negate& n) {
-    (*this)(n.result);
-    (*this)(n.inner);
+    f(n.result);
+    f(n.inner);
   }
   void operator()(const ir::add& a) {
-    (*this)(a.result);
-    (*this)(a.left);
-    (*this)(a.right);
+    f(a.result);
+    f(a.left);
+    f(a.right);
   }
   void operator()(const ir::subtract& s) {
-    (*this)(s.result);
-    (*this)(s.left);
-    (*this)(s.right);
+    f(s.result);
+    f(s.left);
+    f(s.right);
   }
   void operator()(const ir::multiply& m) {
-    (*this)(m.result);
-    (*this)(m.left);
-    (*this)(m.right);
+    f(m.result);
+    f(m.left);
+    f(m.right);
   }
   void operator()(const ir::divide& d) {
-    (*this)(d.result);
-    (*this)(d.left);
-    (*this)(d.right);
+    f(d.result);
+    f(d.left);
+    f(d.right);
   }
   void operator()(const ir::modulo& m) {
-    (*this)(m.result);
-    (*this)(m.left);
-    (*this)(m.right);
+    f(m.result);
+    f(m.left);
+    f(m.right);
   }
   void operator()(const ir::compare_eq& c) {
-    (*this)(c.result);
-    (*this)(c.left);
-    (*this)(c.right);
+    f(c.result);
+    f(c.left);
+    f(c.right);
   }
   void operator()(const ir::compare_ne& c) {
-    (*this)(c.result);
-    (*this)(c.left);
-    (*this)(c.right);
+    f(c.result);
+    f(c.left);
+    f(c.right);
   }
   void operator()(const ir::compare_lt& c) {
-    (*this)(c.result);
-    (*this)(c.left);
-    (*this)(c.right);
+    f(c.result);
+    f(c.left);
+    f(c.right);
   }
   void operator()(const ir::compare_le& c) {
-    (*this)(c.result);
-    (*this)(c.left);
-    (*this)(c.right);
+    f(c.result);
+    f(c.left);
+    f(c.right);
   }
   void operator()(const ir::compare_gt& c) {
-    (*this)(c.result);
-    (*this)(c.left);
-    (*this)(c.right);
+    f(c.result);
+    f(c.left);
+    f(c.right);
   }
   void operator()(const ir::compare_ge& c) {
-    (*this)(c.result);
-    (*this)(c.left);
-    (*this)(c.right);
+    f(c.result);
+    f(c.left);
+    f(c.right);
   }
   void operator()(const ir::label&) {}
   void operator()(const ir::jump&) {}
   void operator()(const ir::conditional_jump& c) {
-    (*this)(c.condition);
+    f(c.condition);
   }
   void operator()(const ir::logical_not& l) {
-    (*this)(l.result);
-    (*this)(l.inner);
+    f(l.result);
+    f(l.inner);
   }
   void operator()(const ir::index& i) {
-    (*this)(i.result);
-    (*this)(i.address);
-    (*this)(i.offset);
+    f(i.result);
+    f(i.address);
+    f(i.offset);
   }
 };
-template <typename F> visit_variables(F) -> visit_variables<F>;
+template <typename F> visit_operands(F) -> visit_operands<F>;
 
 template <typename T>
 concept step = requires (const ir::step& s) {
@@ -180,10 +171,12 @@ struct live_range { int begin = 999'999'999, end = -1; };
 std::map<ir::variable, live_range> live_ranges(const ir::function& f) {
   std::map<ir::variable, live_range> live_ranges;
   for (int i = 0, n = f.steps.size(); i < n; i++) {
-    visit_variables{[&](ir::variable s) {
-      auto& range = live_ranges[s];
-      range.begin = std::min(range.begin, i);
-      range.end = std::max(range.end, i);
+    visit_operands{[&](const ir::operand& o) {
+      if (auto* v = std::get_if<ir::variable>(&o)) {
+        auto& range = live_ranges[*v];
+        range.begin = std::min(range.begin, i);
+        range.end = std::max(range.end, i);
+      }
     }}(f.steps[i]);
   }
   return live_ranges;
