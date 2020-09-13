@@ -8,6 +8,41 @@ import <iostream>;
 
 namespace ir = ::semantics::ir;
 
+struct type_info {
+  std::uint64_t size;
+  std::uint64_t alignment;
+};
+
+type_info info(const ir::data_type&);
+
+type_info info(io::location, ir::builtin_type b) {
+  switch (b) {
+    case ir::void_type: return {0, 1};
+    case ir::int32_type: return {4, 4};
+    case ir::bool_type: return {1, 1};
+  }
+}
+
+type_info info(io::location, const ir::array_type& a) {
+  type_info element = info(a.element);
+  return {.size = a.size * element.size, .alignment = element.alignment};
+}
+
+type_info info(io::location, const ir::pointer_type&) { return {4, 4}; }
+
+type_info info(io::location l, ir::user_defined_type) {
+  io::fatal_message{l, io::message::error}
+      << "cannot compute size of opaque user type.";
+}
+
+type_info info(io::location, const ir::function_pointer_type&) {
+  return {4, 4};
+}
+
+type_info info(const ir::data_type& d) {
+  return d.visit([&](const auto& t) { return info(d.location(), t); });
+}
+
 template <typename F>
 struct visit_operands {
   F f;
@@ -231,12 +266,60 @@ std::map<ir::variable, std::variant<reg, ir::local>> allocate_registers(
   return assignments;
 }
 
+struct frame_info {
+  int size;
+  std::map<ir::local, int> offsets;
+};
+
+frame_info offsets(
+    const ir::function& f,
+    const std::map<ir::variable, std::variant<reg, ir::local>>& assignments) {
+  struct local_info : type_info {
+    local_info(const std::pair<const ir::local, ir::data_type>& l)
+        : local_info(l.first, l.second) {}
+    local_info(ir::local l, ir::data_type t)
+        : type_info(info(t)), id(l), type(std::move(t)) {}
+    ir::local id;
+    ir::data_type type;
+    int offset = 0;
+  };
+  std::vector<local_info> locals{f.stack_variables.begin(),
+                                 f.stack_variables.end()};
+  for (const auto& [v, x] : assignments) {
+    if (auto* l = std::get_if<ir::local>(&x)) {
+      locals.emplace_back(*l, f.variables.at(v));
+    }
+  }
+  if (locals.empty()) return {};
+  constexpr auto by_alignment = [](const auto& l, const auto& r) {
+    return l.alignment > r.alignment;
+  };
+  std::sort(locals.begin(), locals.end(), by_alignment);
+  const int alignment = locals.front().alignment;
+  int size = 0;
+  for (auto& l : locals) {
+    // Align suitably for this local.
+    size += (l.alignment - size) % l.alignment;
+    l.offset = size;
+    size += l.size;
+  };
+  // Pad the total size to a multiple of the max alignment.
+  size += (alignment - size) % alignment;
+  std::map<ir::local, int> offsets;
+  for (auto& l : locals) offsets[l.id] = l.offset - size;
+  return {.size = size, .offsets = std::move(offsets)};
+}
+
 void emit(const ir::function& f) {
-  // TODO: Compute the stack frame size and emit instructions to reserve it.
-  for (const auto& [v, x] : allocate_registers(f)) {
+  const auto assignments = allocate_registers(f);
+  for (const auto& [v, x] : assignments) {
     std::cout << "  " << v << " -> ";
     std::visit([](const auto& x) { std::cout << x; }, x);
     std::cout << '\n';
+  }
+  const auto frame = ::offsets(f, assignments);
+  for (const auto& [l, x] : frame.offsets) {
+    std::cout << "  " << l << " has offset " << x << '\n';
   }
   // TODO: Actually emit the code.
 }
