@@ -208,7 +208,9 @@ std::map<ir::variable, std::variant<reg, ir::local>> allocate_registers(
     }
     const auto& x = f.steps[i];
     auto* destination = x.visit(result);
-    // If this step yields nothing, don't allocate a register for it.
+    // The only kind of operand which needs register allocation is a plain
+    // variable. All other kinds are either constants or references to existing
+    // variables.
     if (!destination) continue;
     if (available.empty()) {
       assert(!in_use.empty());
