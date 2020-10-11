@@ -259,7 +259,7 @@ similar semantics. A template gives a set of instructions for how to produce
 a specialised version of something for a given set of template parameters. Upon
 use of the template, the instantiations are implicitly created.
 
-Using `\`backticks\`` to expositionally represent names which the programmer
+Using `` `backticks` `` to expositionally represent names which the programmer
 cannot type themselves, template expansion would operate approximately like so:
 
 ```
