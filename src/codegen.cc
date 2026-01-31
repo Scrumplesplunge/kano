@@ -172,30 +172,14 @@ enum reg {
   ecx,
   edi,
   esi,
-  spill1,
-  spill2,
-  spill3,
-  spill4,
-  spill5,
-  spill6,
-  spill7,
-  spill8,
 };
 
 std::ostream& operator<<(std::ostream& output, reg r) {
   switch (r) {
-    case ebx: return output << "ebx";
-    case ecx: return output << "ecx";
-    case edi: return output << "edi";
-    case esi: return output << "esi";
-    case spill1: return output << "spill1";
-    case spill2: return output << "spill2";
-    case spill3: return output << "spill3";
-    case spill4: return output << "spill4";
-    case spill5: return output << "spill5";
-    case spill6: return output << "spill6";
-    case spill7: return output << "spill7";
-    case spill8: return output << "spill8";
+    case ebx: return output << "%ebx";
+    case ecx: return output << "%ecx";
+    case edi: return output << "%edi";
+    case esi: return output << "%esi";
   }
 }
 
@@ -229,10 +213,12 @@ std::map<ir::variable, std::variant<reg, ir::local>> allocate_registers(
   std::vector<reg> available = {ebx, ecx, edi, esi};
   std::map<reg, ir::variable> in_use;
   for (int i = 0, n = f.steps.size(); i < n; i++) {
-    // Collect registers for which the live range has ended.
+    // Collect registers for which the live range has ended. Note that we can
+    // treat a range as ended even if it is needed in this instruction. This
+    // allows us to reuse a register for both input and output.
     for (auto j = in_use.begin(); j != in_use.end();) {
       const auto& range = ranges.at(j->second);
-      if (range.end < i) {
+      if (range.end <= i) {
         available.push_back(j->first);
         j = in_use.erase(j);
       } else {
@@ -246,7 +232,6 @@ std::map<ir::variable, std::variant<reg, ir::local>> allocate_registers(
     // variables.
     if (!destination) continue;
     if (available.empty()) {
-      assert(!in_use.empty());
       const auto by_range_end = [&](const auto& l, const auto& r) {
         return ranges.at(l.second).end < ranges.at(r.second).end;
       };
@@ -308,6 +293,94 @@ frame_info offsets(
   return {.size = size, .offsets = std::move(offsets)};
 }
 
+struct emitter {
+  std::ostream& output;
+  const ir::function& f;
+  const std::map<ir::variable, std::variant<reg, ir::local>>& assignments;
+  const frame_info& frame;
+
+  void emit_operand(const ir::operand& o) {
+    std::visit([this](const auto& x) { emit_operand(x); }, o);
+  }
+  void emit_operand(std::int32_t x) {
+    output << '$' << x;
+  }
+  void emit_operand(ir::symbol s) {
+    output << '$' << s;
+  }
+  void emit_operand(ir::local l) {
+    output << frame.offsets.at(l) << "(%ebp)";
+  }
+  void emit_operand(reg r) {
+    output << r;
+  }
+  void emit_operand(ir::variable v) {
+    std::visit([this](const auto& x) { emit_operand(x); }, assignments.at(v));
+  }
+
+  bool same_reg(const ir::operand& l, const ir::operand& r) const {
+    auto* lv = std::get_if<ir::variable>(&l);
+    auto* rv = std::get_if<ir::variable>(&r);
+    if (!lv || !rv) return false;
+    return assignments.at(*lv) == assignments.at(*rv);
+  }
+
+  // TODO: Handle instructions with multiple non-register operands suitably.
+
+  void emit(const ir::copy& c) {
+    output << "  mov ";
+    emit_operand(c.value);
+    output << ", ";
+    emit_operand(c.result);
+    output << '\n';
+  }
+  void emit(const ir::add& a) {
+    if (same_reg(a.result, a.left)) {
+      output << "  add ";
+      emit_operand(a.right);
+      output << ", ";
+      emit_operand(a.left);
+      output << '\n';
+    } else if (same_reg(a.result, a.right)) {
+      output << "  add ";
+      emit_operand(a.left);
+      output << ", ";
+      emit_operand(a.right);
+      output << '\n';
+    } else {
+      output << "  mov ";
+      emit_operand(a.left);
+      output << ", ";
+      emit_operand(a.result);
+      output << "\n  add ";
+      emit_operand(a.right);
+      output << ", ";
+      emit_operand(a.result);
+      output << '\n';
+    }
+  }
+  void emit(const ir::store& s) {
+    // TODO: Handle instructions with destinations addresses that aren't in
+    // registers.
+    output << "  mov ";
+    emit_operand(s.value);
+    output << ", (";
+    emit_operand(s.address);
+    output << ")\n";
+  }
+  template <typename T>
+  void emit(const T&) {
+    output << "  <unimplemented>\n";
+  }
+  void emit(const ir::step& s) {
+    s.visit([this](const auto& x) { return emit(x); });
+  }
+
+  void emit() {
+    for (const auto& step : f.steps) emit(step);
+  }
+};
+
 void emit(const ir::function& f) {
   const auto assignments = allocate_registers(f);
   for (const auto& [v, x] : assignments) {
@@ -319,7 +392,9 @@ void emit(const ir::function& f) {
   for (const auto& [l, x] : frame.offsets) {
     std::cout << "  " << l << " has offset " << x << '\n';
   }
+  std::cout << "=====\n";
   // TODO: Actually emit the code.
+  emitter{std::cout, f, assignments, frame}.emit();
 }
 
 int main(int argc, char* argv[]) {
