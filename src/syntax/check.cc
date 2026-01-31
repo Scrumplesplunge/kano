@@ -8,6 +8,7 @@ export module syntax.check;
 
 import syntax.parse;
 export import semantics.ir;
+import<iomanip>;
 import<iostream>;
 import<filesystem>;
 

@@ -4,8 +4,6 @@ import semantics.show;
 import <concepts>;
 import <iostream>;
 
-#include <cassert>
-
 namespace ir = ::semantics::ir;
 
 struct type_info {

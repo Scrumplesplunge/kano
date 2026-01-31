@@ -6,8 +6,6 @@ import kano.code;
 import kano.codegen;
 import kano.parser;
 
-#include <cassert>
-
 int main(int argc, char* argv[]) {
   if (argc != 2) {
     std::cerr << "Usage: kano <filename>\n";

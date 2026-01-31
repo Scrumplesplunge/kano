@@ -1,4 +1,4 @@
-CLANG_PREFIX = ${HOME}/src/clang/build
+CLANG_PREFIX = /usr
 
 CXX = ${CLANG_PREFIX}/bin/clang++ -std=c++2a \
 			-I${CLANG_PREFIX}/include/c++/v1 \
